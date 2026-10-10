@@ -42,6 +42,30 @@ services:
       BANKSLIP_API_URL: ${BANKSLIP_API_URL:-http://localhost:8080}
       BANKSLIP_API_INTERNAL_TOKEN: ${BANKSLIP_API_INTERNAL_TOKEN:-default_token}
       BANKSLIP_API_TIMEOUT: ${BANKSLIP_API_TIMEOUT:-5}
+      # Ledger: as variaveis que o Ledger acrescenta a base. Mesma regra
+      # de cima: so chega no container o que esta escrito aqui. Os
+      # padroes sao os de producao; os de teste (timeouts de 1 segundo)
+      # vem do .env.example.
+      # O Cadastro (Contrato): quem diz se a pessoa existe.
+      PARTY_API_URL: ${PARTY_API_URL:-http://party-mock:8080}
+      PARTY_API_INTERNAL_TOKEN: ${PARTY_API_INTERNAL_TOKEN:-default_token}
+      PARTY_API_TIMEOUT: ${PARTY_API_TIMEOUT:-3}
+      # O provedor de pagamentos, de fora.
+      PROVIDER_API_URL: ${PROVIDER_API_URL:-http://provider-mock:8080}
+      PROVIDER_API_INTERNAL_TOKEN: ${PROVIDER_API_INTERNAL_TOKEN:-default_token}
+      PROVIDER_API_TIMEOUT: ${PROVIDER_API_TIMEOUT:-5}
+      # As chaves das contas da propria plataforma.
+      PLATFORM_PARTY_KEY: ${PLATFORM_PARTY_KEY:-99999999-9999-4999-8999-999999999999}
+      PLATFORM_CLIENT_KEY: ${PLATFORM_CLIENT_KEY:-9c9c9c9c-9c9c-49c9-89c9-9c9c9c9c9c9c}
+      # Quanto esperar por um lock no banco (texto, no formato do Postgres).
+      LOCK_TIMEOUT: ${LOCK_TIMEOUT:-3s}
+      # Quantas vezes o outbox tenta entregar uma mensagem antes de desistir.
+      OUTBOX_MAX_ATTEMPTS: ${OUTBOX_MAX_ATTEMPTS:-5}
+    # Faz "host.docker.internal" apontar para a sua maquina tambem no
+    # Linux (no Docker Desktop ele ja existe). E por esse nome que o
+    # Ledger alcanca o Cadastro de verdade no ponto de integracao.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Monta o codigo pra dentro do container: salvou o arquivo,
       # a API recarrega sozinha (o --reload ali embaixo).
