@@ -692,3 +692,65 @@ mesmo código.
 Este projeto é **MIT** — pode usar, copiar, modificar e levar para o seu
 portfólio, inclusive em trabalho pago. O único pedido é manter o arquivo
 `LICENSE` junto quando você distribuir o código.
+
+---
+
+## 9. Acréscimos à base
+
+Este repositório é o **Ledger**, uma cópia da base acima. A cópia só
+recebeu linhas novas; nenhuma linha da base foi mudada. O que ela ganhou
+além de rota, erro e tabela vem justificado aqui, em quatro linhas.
+
+### Os mocks (`party-mock` e `provider-mock`, no `docker-compose.yml`)
+
+1. *Princípio da base tocado:* o compose da base sobe só `api` e `db`.
+2. *Por que não funciona sem:* os testes de integração falam HTTP com a
+   API, e a API chama outros serviços; sem mock, nenhum teste roda sem os
+   três serviços de pé.
+3. *A peça, e por que é a menor:* um container WireMock por dependência,
+   configurado só por arquivos JSON — zero código.
+4. *O que ela não faz:* não roda em produção, não guarda estado entre
+   execuções, não substitui o teste ponta a ponta.
+
+## 10. Como subir o Ledger
+
+Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e
+os valores com que a suíte roda. Sem ele, a API sobe nas portas da base.
+
+```bash
+cp .env.example .env
+docker compose up -d --wait
+git config core.hooksPath .githooks
+```
+
+A terceira linha liga o `.githooks/commit-msg`, que confere a mensagem de
+cada commit. Ela vale para o seu clone e só precisa rodar uma vez.
+
+São quatro coisas de pé, cada uma numa porta da sua máquina:
+
+| Serviço | Porta | O que é |
+|---|---|---|
+| `api` | `3003` | a API do Ledger (http://localhost:3003) |
+| `db` | `5435` | o banco do Ledger |
+| `party-mock` | `8091` | o mock do Cadastro |
+| `provider-mock` | `8082` | o mock do provedor de pagamentos |
+
+Os testes rodam como na seção 2, com `pytest`, e batem na `3003`.
+
+### No ponto de integração, contra o Cadastro de verdade
+
+Quem responde pelo Cadastro é o serviço real, então o `party-mock` não
+sobe. No seu `.env`, troque o endereço do Cadastro:
+
+```
+PARTY_API_URL=http://host.docker.internal:3001
+```
+
+e suba sem o mock:
+
+```bash
+docker compose up -d api db provider-mock
+```
+
+Precisa dos dois mocks de pé ao mesmo tempo e a `8091` está ocupada?
+Troque o `PARTY_MOCK_PORT` no `.env`.
