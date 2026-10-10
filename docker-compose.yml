@@ -102,3 +102,13 @@ services:
       timeout: 3s
       retries: 20
 
+  # Mock das dependencias, so para teste. Acrescimo: a base nao e alterada.
+  party-mock:
+    image: wiremock/wiremock:3.9.1
+    ports: ["${PARTY_MOCK_PORT:-8091}:8080"]
+    volumes: ["./tests/mocks/party-api:/home/wiremock"]
+
+  provider-mock:
+    image: wiremock/wiremock:3.9.1
+    ports: ["${PROVIDER_MOCK_PORT:-8082}:8080"]
+    volumes: ["./tests/mocks/provider-api:/home/wiremock"]
