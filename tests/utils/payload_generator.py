@@ -173,6 +173,34 @@ class PayloadGenerator:
         return payload
 
     @staticmethod
+    def create_suspense_inflow_payload(
+        client_key: str = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1",
+        amount_in_cents: int = 640000,
+        end_to_end_id: str = None,
+        value_date: str = None,
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """A entrada por Pix sem identificação (CU-B2): o valor da TX1 que
+        chega só com o `client_key`, sem contrato, competência nem pagador.
+
+        O `end_to_end_id` segue a regra do `create_inflow_payload`.
+        """
+        if end_to_end_id is None:
+            end_to_end_id = "E00000000202609051422" + uuid4().hex[:11]
+
+        payload = {
+            "amount_in_cents": amount_in_cents,
+            "client_key": client_key,
+            "end_to_end_id": end_to_end_id,
+            "actor": actor,
+        }
+
+        if value_date is not None:
+            payload["value_date"] = value_date
+
+        return payload
+
+    @staticmethod
     def create_closure_payload(actor: str = "contract-api", reason: str = "fim da locação ALFA-2026-0042") -> dict:
         """O encerramento do contrato, como o Contrato o manda (01b §4)."""
         return {"actor": actor, "reason": reason}

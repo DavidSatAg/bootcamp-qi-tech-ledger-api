@@ -4,7 +4,7 @@ from constants import PLATFORM_CLIENT_KEY
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import ContractNotProvisioned, InvalidSchema
+from errors import ClientBooksNotFound, ContractNotProvisioned, InvalidSchema
 from errors import LedgerAccountNotFound
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
 from repositories import LedgerAccountRepository, LedgerTransactionRepository
@@ -39,6 +39,9 @@ class InflowController(BaseController):
         # (fatia 12, RN-07).
         if "wallet_key" in payload:
             return self._create_deposit(payload, idempotency_key, raw_body)
+
+        if "client_key" in payload:
+            self._suspense_destination(payload)
 
         collection, external = self._find_accounts(payload)
         value_date = self._value_date(payload)
@@ -237,6 +240,26 @@ class InflowController(BaseController):
         )
 
         return collection, external
+
+    def _suspense_destination(self, payload: dict) -> tuple:
+        """O `external/CASH` e o `suspense/UNALLOCATED` do `client_key` do
+        corpo: o dinheiro que chegou sem dizer de qual contrato é (CU-B2).
+
+        Os cinco livros nascem juntos (G:376); falta um só por bug. Sem um
+        deles, o 019 sai antes do motor e não grava nada (05b D-01).
+        """
+        client_key = payload["client_key"]
+        external = self.ledger_account_repository.find_by_natural_key(
+            client_key, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+        )
+        suspense = self.ledger_account_repository.find_by_natural_key(
+            client_key, LedgerAccountType.SUSPENSE, PurposeCode.UNALLOCATED, "", ""
+        )
+
+        if external is None or suspense is None:
+            raise ClientBooksNotFound(client_key)
+
+        return external, suspense
 
     def _value_date(self, payload: dict) -> datetime:
         """A data-valor do corpo, ou o agora quando ela não veio (CU-J10).

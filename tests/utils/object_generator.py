@@ -51,6 +51,21 @@ class ObjectGenerator:
         return status, response, inflow_payload
 
     @staticmethod
+    def create_suspense_inflow(client_key: str = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1", **kwargs) -> tuple:
+        """Uma entrada por Pix só com o `client_key`, que cai no
+        `suspense/UNALLOCATED` do cliente, com a `Idempotency-Key` igual ao
+        `end_to_end_id`.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        inflow_payload = PayloadGenerator.create_suspense_inflow_payload(client_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_inflow(
+            inflow_payload, idempotency_key=inflow_payload["end_to_end_id"]
+        )
+
+        return status, response, inflow_payload
+
+    @staticmethod
     def close_contract_ledger(contract_key: str, **kwargs) -> tuple:
         """Encerra o contrato no ledger. Devolve (status, corpo) sem
         conferir o status."""
