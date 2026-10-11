@@ -10,6 +10,7 @@ from controllers.base_controller import BaseController
 from errors import (
     CurrencyMismatch,
     IdempotencyKeyConflict,
+    InsufficientBalance,
     InternalError,
     InvalidSchema,
     LedgerAccountNotMovable,
@@ -131,10 +132,12 @@ class PostingController(BaseController):
         do status depois do 7 (RN-08 da fatia 08)."""
         self._check_accounts(legs)
         self._check_purpose_pairs(purpose_pairs)
-        self._lock_net_debits(legs)
+        locked = self._lock_net_debits(legs)
 
         if after_lock is not None:
             after_lock()
+
+        self._check_funds(locked)
 
         ledger_transaction = self._write(transaction, legs)
         self._recheck_accounts(legs)
@@ -295,6 +298,14 @@ class PostingController(BaseController):
         )
 
         return locked
+
+    def _check_funds(self, locked: list) -> None:
+        """Passo 6: o saldo de cada conta travada, somado DEPOIS da trava,
+        cobre o líquido devedor dela (G:360). Somado antes, outro débito
+        commitado no meio passaria despercebido (D0007 :46-47)."""
+        for ledger_account, net_debit in locked:
+            if self.ledger_account_repository.get_balance(ledger_account) < net_debit:
+                raise InsufficientBalance()
 
     def _write(self, transaction: dict, legs: list):
         """Passo 7: o cabeçalho e as pernas.

@@ -149,6 +149,27 @@ class TestSplitCreate:
         ]
         assert debits_and_credits(entries) == (640000, 640000)
 
+    def test_transfers_split_partial_payment_refused(self):
+        contract_ledger = provision_contract()
+        contract_key = contract_ledger["contract_key"]
+        keys = account_keys(contract_ledger)
+        inflow(contract_key, amount_in_cents=320000)
+
+        status, response, _payload = ObjectGenerator.create_split(contract_key)
+
+        assert status == 422, response
+        assert response["code"] == "QIT001009"
+        assert balance(keys["COLLECTION"]) == 320000
+        assert balance(keys["RENT"]) == 0
+
+        inflow(contract_key, amount_in_cents=320000)
+
+        status, response, _payload = ObjectGenerator.create_split(contract_key, idempotency_key=str(uuid4()))
+
+        assert status == 201, response
+        assert balance(keys["COLLECTION"]) == 0
+        assert balance(keys["RENT"]) == 450000
+
     def test_transfers_split_same_period_twice_conflicts(self):
         contract_ledger = provision_contract()
         contract_key = contract_ledger["contract_key"]
