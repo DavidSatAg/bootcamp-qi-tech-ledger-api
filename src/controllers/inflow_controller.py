@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
+from constants import PLATFORM_CLIENT_KEY
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
 from errors import ContractNotProvisioned, InvalidSchema
+from errors import LedgerAccountNotFound
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
 from repositories import LedgerAccountRepository, LedgerTransactionRepository
 
@@ -27,6 +29,12 @@ class InflowController(BaseController):
         """Confere a chave, acha as duas contas e a data-valor, nesta ordem
         (RN-02), e entrega as pernas ao motor."""
         PostingController.require_idempotency_key(idempotency_key)
+
+        # O pagamento com a carteira: o schema já garantiu que veio sem
+        # pagador e sem `end_to_end_id` (fatia 12, RN-06).
+        if "source_wallet_key" in payload:
+            return self._create_from_wallet(payload, idempotency_key, raw_body)
+
         collection, external = self._find_accounts(payload)
         value_date = self._value_date(payload)
 
@@ -62,6 +70,91 @@ class InflowController(BaseController):
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
         return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    def _create_from_wallet(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
+        """O aluguel pago com a carteira: quatro pernas em dois livros
+        (fatia 12, RN-06; remodelagem/10 :109-112). A carteira sai do livro
+        da plataforma e entra na COLLECTION, no livro do cliente; o par
+        `external` leva o dinheiro de um livro ao outro.
+
+        Só a carteira trava (o `external` é ativo), e o saldo dela é somado
+        depois da trava: o 009 é o do motor. Sem carteira — ou com uma
+        conta que não é `own/WALLET` —, o 018 sai pelo motor, com pernas
+        vazias, e fica gravado na chave (RN-04a).
+        """
+        collection, external = self._find_accounts(payload)
+        wallet = self._find_wallet(payload["source_wallet_key"])
+        value_date = self._value_date(payload)
+
+        # O escopo da chave é o livro do cliente, o do `external` debitado.
+        idempotency = {
+            "client_key": external.client_key,
+            "endpoint": ENDPOINT,
+            "key": idempotency_key,
+            "raw_body": raw_body,
+        }
+        transaction = {
+            "ledger_transaction_type": LedgerTransactionType.INFLOW,
+            "contract_key": payload["contract_key"],
+            "period_reference": payload["period_reference"],
+            "value_date": value_date,
+            "actor": payload["actor"],
+            "reason": payload.get("reason"),
+        }
+
+        posting_controller = PostingController()
+
+        if wallet is None:
+            posting_controller.post(
+                idempotency, transaction, [], [], SUCCESS_STATUS, after_lock=self._raise_wallet_not_found
+            )
+
+        # Quem paga é o dono da carteira (G:407; RFC :400).
+        transaction["payer_party_key"] = wallet.owner_party_key
+
+        platform_cash = self.ledger_account_repository.find_by_natural_key(
+            PLATFORM_CLIENT_KEY, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+        )
+
+        amount_in_cents = payload["amount_in_cents"]
+        legs = [
+            (wallet, LedgerEntry.DEBIT, amount_in_cents),
+            (collection, LedgerEntry.CREDIT, amount_in_cents),
+            (external, LedgerEntry.DEBIT, amount_in_cents),
+            (platform_cash, LedgerEntry.CREDIT, amount_in_cents),
+        ]
+        # As pernas `external` não consultam a `purpose_rule` (G:354).
+        purpose_pairs = [(wallet, collection)]
+
+        ledger_transaction_key = posting_controller.post(
+            idempotency, transaction, legs, purpose_pairs, SUCCESS_STATUS
+        )
+
+        ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
+
+        return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    def _find_wallet(self, source_wallet_key: str):
+        """A carteira pela chave. Conta que não é `own/WALLET` é carteira
+        inexistente (fatia 12, D3): None."""
+        wallet = self.ledger_account_repository.get_by_key(source_wallet_key)
+
+        if wallet is None:
+            return None
+
+        if wallet.ledger_account_type.enumerator != LedgerAccountType.OWN:
+            return None
+
+        if wallet.purpose_code.enumerator != PurposeCode.WALLET:
+            return None
+
+        return wallet
+
+    @staticmethod
+    def _raise_wallet_not_found() -> None:
+        """Passo 5 do motor, sem pernas: o 018 sai depois do registro da
+        chave, e o motor o grava (fatia 12, RN-04a; S05a D-03)."""
+        raise LedgerAccountNotFound()
 
     def _find_accounts(self, payload: dict) -> tuple:
         """A COLLECTION do contrato e o `external/CASH` do mesmo cliente.

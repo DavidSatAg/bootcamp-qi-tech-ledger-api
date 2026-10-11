@@ -217,3 +217,36 @@ class ObjectGenerator:
         sem conferir o status."""
         wallet_payload = PayloadGenerator.create_wallet_payload(party_key=party_key)
         return RequestGenerator.POST_wallets(wallet_payload)
+
+    @staticmethod
+    def pay_with_wallet(contract_key: str, source_wallet_key: str, idempotency_key: str = None, **kwargs) -> tuple:
+        """Um pagamento do contrato com a carteira, com uma
+        `Idempotency-Key` nova quando nenhuma vem.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        if idempotency_key is None:
+            idempotency_key = str(uuid4())
+
+        wallet_inflow_payload = PayloadGenerator.create_wallet_inflow_payload(contract_key, source_wallet_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_inflow(wallet_inflow_payload, idempotency_key=idempotency_key)
+
+        return status, response, wallet_inflow_payload
+
+    @staticmethod
+    def create_funded_wallet(owner_party_key: str = "22222222-2222-4222-8222-222222222222") -> str:
+        """Abre (ou reencontra) a carteira da parte e repassa para ela os
+        450000 da RENT de um contrato dividido (remodelagem/10 :73).
+        Devolve a chave da carteira."""
+        status, wallet = ObjectGenerator.open_wallet(owner_party_key)
+        assert status in (200, 201), wallet
+
+        contract_ledger = ObjectGenerator.create_divided_contract(owner_party_key)
+        for account in contract_ledger["accounts"]:
+            if account["purpose_code"] == "RENT":
+                rent_account_key = account["ledger_account_key"]
+
+        status, payout, _payload = ObjectGenerator.create_payout(rent_account_key, destination="wallet")
+        assert status == 201, payout
+
+        return wallet["ledger_account_key"]

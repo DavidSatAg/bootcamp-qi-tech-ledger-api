@@ -35,15 +35,47 @@
     "reason": {
       "type": "string",
       "maxLength": 255
+    },
+    "source_wallet_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     }
   },
   "required": [
     "amount_in_cents",
-    "contract_key",
-    "payer_party_key",
-    "period_reference",
-    "end_to_end_id",
     "actor"
+  ],
+  "oneOf": [
+    {
+      "required": [
+        "contract_key",
+        "period_reference",
+        "payer_party_key",
+        "end_to_end_id"
+      ],
+      "not": {
+        "anyOf": [
+          {"required": ["source_wallet_key"]},
+          {"required": ["wallet_key"]},
+          {"required": ["client_key"]}
+        ]
+      }
+    },
+    {
+      "required": [
+        "contract_key",
+        "period_reference",
+        "source_wallet_key"
+      ],
+      "not": {
+        "anyOf": [
+          {"required": ["payer_party_key"]},
+          {"required": ["end_to_end_id"]},
+          {"required": ["wallet_key"]},
+          {"required": ["client_key"]}
+        ]
+      }
+    }
   ],
   "additionalProperties": false
 }

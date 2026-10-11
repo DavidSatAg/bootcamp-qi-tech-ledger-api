@@ -324,3 +324,22 @@ class PayloadGenerator:
             "party_key": party_key,
             "actor": actor,
         }
+
+    @staticmethod
+    def create_wallet_inflow_payload(
+        contract_key: str,
+        source_wallet_key: str,
+        amount_in_cents: int = 300000,
+        period_reference: str = "2026-09",
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """O aluguel de setembro pago com a carteira (remodelagem/10
+        :104-109): sem pagador e sem `end_to_end_id`, que saem da carteira
+        e não do corpo."""
+        return {
+            "amount_in_cents": amount_in_cents,
+            "contract_key": contract_key,
+            "period_reference": period_reference,
+            "source_wallet_key": source_wallet_key,
+            "actor": actor,
+        }
