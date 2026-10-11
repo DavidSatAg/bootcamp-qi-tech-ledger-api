@@ -61,6 +61,58 @@ class TestStatementIssue:
         assert response["total_credit_in_cents"] == 0
         assert response["closing_balance_in_cents"] == 0
 
+    def test_statement_same_period_conflicts(self):
+        _contract_key, collection_key = provision_with_tx1()
+        status, original, _payload = ObjectGenerator.create_statement(collection_key)
+        assert status == 201, original
+
+        periods = [
+            ("2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z"),
+            ("2026-09-15T00:00:00Z", "2026-10-15T00:00:00Z"),
+        ]
+
+        for period_start, period_end in periods:
+            status, response, _payload = ObjectGenerator.create_statement(
+                collection_key, period_start=period_start, period_end=period_end
+            )
+
+            assert status == 409, (period_start, period_end, response)
+            assert response["code"] == "QIT001017", (period_start, period_end, response)
+
+    def test_statement_late_entry_issues_successor(self):
+        contract_key, collection_key = provision_with_tx1()
+        status, original, _payload = ObjectGenerator.create_statement(collection_key)
+        assert status == 201, original
+        status, late_inflow, _payload = ObjectGenerator.create_inflow(contract_key, value_date=TX1_VALUE_DATE)
+        assert status == 201, late_inflow
+
+        status, successor, _payload = ObjectGenerator.create_statement(collection_key)
+
+        assert status == 201, successor
+        assert successor["supersedes_statement_key"] == original["statement_key"]
+        assert successor["previous_statement_key"] == original["statement_key"]
+        assert len(successor["lines"]) == 2
+        assert successor["content_hash"] != original["content_hash"]
+
+    def test_statement_second_successor_conflicts(self):
+        contract_key, collection_key = provision_with_tx1()
+        status, original, _payload = ObjectGenerator.create_statement(collection_key)
+        assert status == 201, original
+        status, late_inflow, _payload = ObjectGenerator.create_inflow(contract_key, value_date=TX1_VALUE_DATE)
+        assert status == 201, late_inflow
+        status, successor, _payload = ObjectGenerator.create_statement(collection_key)
+        assert status == 201, successor
+
+        status, response, _payload = ObjectGenerator.create_statement(collection_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001017"
+
+        status, response = RequestGenerator.GET_statement(original["statement_key"])
+
+        assert status == 200, response
+        assert response["superseded_by_statement_key"] == successor["statement_key"]
+
     def test_statement_replays_same_key(self):
         _contract_key, collection_key = provision_with_tx1()
         payload = PayloadGenerator.create_statement_payload(collection_key)

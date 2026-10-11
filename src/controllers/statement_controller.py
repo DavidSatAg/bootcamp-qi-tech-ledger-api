@@ -16,6 +16,7 @@ from errors import (
     LockTimeout,
     QIException,
     StatementNotFound,
+    StatementPeriodAlreadyIssued,
 )
 from models import LedgerAccountType, LedgerEntry
 from repositories import IdempotencyRecordRepository, LedgerAccountRepository, StatementRepository
@@ -25,6 +26,10 @@ ENDPOINT = "POST /statement"
 # O status que o registro de idempotência guarda para o replay. O status da
 # resposta HTTP sai do resource, e os dois são o 201 do §3.1.
 SUCCESS_STATUS = 201
+
+# A UNIQUE(supersedes_statement_id) do database.sql não tem nome: este é o
+# que o Postgres dá a ela (RN-08).
+SUPERSEDES_CONSTRAINT = "statement_supersedes_statement_id_key"
 
 # Os instantes do texto do hash: UTC, microssegundos e `Z` (decisão A2).
 HASH_INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -112,17 +117,50 @@ class StatementController(BaseController):
         if cutoff is None:
             raise LockTimeout()
 
-        previous_statement = self.statement_repository.get_last(ledger_account.id)
         lines = self.statement_repository.list_lines(ledger_account.id, period_start, period_end, cutoff)
+        supersedes_statement = self._superseded_statement(ledger_account, period_start, period_end, lines)
+
+        previous_statement = self.statement_repository.get_last(ledger_account.id)
         content_hash = self._content_hash(
             ledger_account.ledger_account_key, period_start, period_end, previous_statement, lines
         )
 
-        statement = self.statement_repository.create(
-            ledger_account, period_start, period_end, previous_statement, None, content_hash, cutoff
-        )
+        try:
+            statement = self.statement_repository.create(
+                ledger_account, period_start, period_end, previous_statement, supersedes_statement, content_hash, cutoff
+            )
+        except IntegrityError as error:
+            # Defesa: com a trava da RN-06, a 2ª emissão cai na RN-07 antes daqui.
+            constraint_name = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+            if constraint_name == SUPERSEDES_CONSTRAINT:
+                raise StatementPeriodAlreadyIssued() from error
+            raise
 
         return self._to_dict(statement, lines)
+
+    def _superseded_statement(self, ledger_account, period_start: datetime, period_end: datetime, lines: list):
+        """O vigente que este extrato supersede, ou None para um original (RN-07).
+
+        Vigente sobreposto de outro período → 017. Vigente do mesmo período:
+        se há linha lançada depois dele, este é o sucessor; senão → 017.
+        """
+        for current in self.statement_repository.list_current(ledger_account.id):
+            same_period = current.period_start == period_start and current.period_end == period_end
+            overlaps = current.period_start < period_end and period_start < current.period_end
+
+            if not overlaps:
+                continue
+
+            if not same_period:
+                raise StatementPeriodAlreadyIssued(ledger_account.ledger_account_key, period_start, period_end)
+
+            has_late_entry = any(ledger_entry.created_at > current.created_at for ledger_entry, _tx in lines)
+            if not has_late_entry:
+                raise StatementPeriodAlreadyIssued(ledger_account.ledger_account_key, period_start, period_end)
+
+            return current
+
+        return None
 
     def _register_idempotency_key(self, client_key: str, idempotency_key: str, raw_body: bytes) -> tuple:
         """SAVEPOINT + INSERT do registro, como o passo 1 da 05a (D0003

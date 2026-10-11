@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import case, func
+from sqlalchemy.orm import aliased
 
 from database import Context
 from models import LedgerAccount, LedgerEntry, LedgerTransaction, Statement
@@ -37,6 +38,20 @@ class StatementRepository:
             .filter(Statement.ledger_account_id == ledger_account_id)
             .order_by(Statement.created_at.desc(), Statement.id.desc())
             .first()
+        )
+
+    def list_current(self, ledger_account_id: int) -> list:
+        """Os extratos vigentes da conta: os que nenhum outro supersede (D0009 :75)."""
+        successor = aliased(Statement)
+        is_superseded = (
+            self.session.query(successor.id).filter(successor.supersedes_statement_id == Statement.id).exists()
+        )
+
+        return (
+            self.session.query(Statement)
+            .filter(Statement.ledger_account_id == ledger_account_id, ~is_superseded)
+            .order_by(Statement.id)
+            .all()
         )
 
     def list_lines(self, ledger_account_id: int, start: datetime, end: datetime, cutoff: datetime) -> list:
