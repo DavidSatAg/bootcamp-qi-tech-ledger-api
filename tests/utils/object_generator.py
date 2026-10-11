@@ -166,6 +166,25 @@ class ObjectGenerator:
         return status, response, internal_payload
 
     @staticmethod
+    def create_internal_allocations(
+        source_account_key: str, allocations: list, idempotency_key: str = None, **kwargs
+    ) -> tuple:
+        """Uma transferência interna com rateio, com uma `Idempotency-Key`
+        nova quando nenhuma vem.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        if idempotency_key is None:
+            idempotency_key = str(uuid4())
+
+        internal_payload = PayloadGenerator.create_internal_allocations_payload(
+            source_account_key, allocations, **kwargs
+        )
+        status, response = RequestGenerator.POST_transfers_internal(internal_payload, idempotency_key=idempotency_key)
+
+        return status, response, internal_payload
+
+    @staticmethod
     def create_paid_out_contract(rent_beneficiary_party_key: str = "22222222-2222-4222-8222-222222222222") -> tuple:
         """O contrato dividido e o repasse dos 450000 da RENT (05:183).
         Devolve (corpo do provisionamento, corpo do 202 do repasse)."""

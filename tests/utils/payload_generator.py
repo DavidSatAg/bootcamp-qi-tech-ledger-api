@@ -291,6 +291,30 @@ class PayloadGenerator:
         return payload
 
     @staticmethod
+    def create_internal_allocations_payload(
+        source_account_key: str,
+        allocations: list,
+        gross_amount_in_cents: int = 500000,
+        actor: str = "erp-alfa",
+        reason: str = "aluguel setembro APT-101",
+        value_date: str = None,
+    ) -> dict:
+        """A transferência interna com rateio (D0013 :41-51; fatia 15b).
+        `allocations` vai como veio; `value_date` ausente fica fora do corpo."""
+        payload = {
+            "source_account_key": source_account_key,
+            "gross_amount_in_cents": gross_amount_in_cents,
+            "allocations": allocations,
+            "actor": actor,
+            "reason": reason,
+        }
+
+        if value_date is not None:
+            payload["value_date"] = value_date
+
+        return payload
+
+    @staticmethod
     def create_webhook_payload(
         outbox_key: str,
         provider_reference: str,
