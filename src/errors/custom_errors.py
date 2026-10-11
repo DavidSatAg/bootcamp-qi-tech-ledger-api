@@ -104,10 +104,12 @@ class InvalidBirthdate(QIException):
 class LedgerAccountNotFound(QIException):
     code = "QIT001018"
 
-    def __init__(self, ledger_account_key) -> None:
+    def __init__(self, ledger_account_key=None) -> None:
         title = "Ledger Account not Found"
         http_status = 404
-        description = f"Ledger account with key {ledger_account_key} was not found."
+        description = "The ledger account was not found."
+        if ledger_account_key is not None:
+            description = f"Ledger account with key {ledger_account_key} was not found."
         translation = "conta inexistente"
         super().__init__(title, self.code, http_status, description, translation)
 
@@ -140,10 +142,12 @@ class SplitVersionOutOfSequence(QIException):
 class PurposePairNotAllowed(QIException):
     code = "QIT001008"
 
-    def __init__(self, source_purpose_code, target_purpose_code) -> None:
+    def __init__(self, source_purpose_code=None, target_purpose_code=None) -> None:
         title = "Purpose pair not allowed"
         http_status = 422
-        description = f"Purpose pair {source_purpose_code} -> {target_purpose_code} is not in purpose_rule."
+        description = "The purpose pair is not in purpose_rule, or crosses contracts."
+        if source_purpose_code is not None:
+            description = f"Purpose pair {source_purpose_code} -> {target_purpose_code} is not in purpose_rule."
         translation = "par de propósitos proibido / contratos diferentes"
         super().__init__(title, self.code, http_status, description, translation)
 
@@ -180,4 +184,59 @@ class ContractNotProvisioned(QIException):
         if contract_key is not None:
             description = f"The contract {contract_key} is not provisioned in the ledger."
         translation = "contrato não provisionado"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class InsufficientBalance(QIException):
+    code = "QIT001009"
+
+    def __init__(self) -> None:
+        title = "Insufficient balance"
+        http_status = 422
+        description = "The ledger account balance does not cover the debit."
+        translation = "saldo insuficiente"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class LockTimeout(QIException):
+    code = "QIT001011"
+
+    def __init__(self) -> None:
+        title = "Lock timeout"
+        http_status = 409
+        description = "The ledger accounts stayed locked by another posting beyond the lock timeout."
+        translation = "contenção além do lock_timeout"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class LedgerAccountNotMovable(QIException):
+    code = "QIT001012"
+
+    def __init__(self) -> None:
+        title = "Ledger account not movable"
+        http_status = 409
+        description = "A ledger account of the posting does not accept movement in its current status."
+        translation = "conta não aceita movimento no estado atual"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class CurrencyMismatch(QIException):
+    code = "QIT001014"
+
+    def __init__(self) -> None:
+        title = "Currency mismatch"
+        http_status = 422
+        description = "The ledger accounts of the posting have different currencies."
+        translation = "moedas divergentes"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class TransactionDoesNotBalance(QIException):
+    code = "QIT001042"
+
+    def __init__(self) -> None:
+        title = "Transaction does not balance"
+        http_status = 500
+        description = "The debits and credits of the transaction do not add up to zero in some book."
+        translation = "a transação não fecha em zero em algum livro"
         super().__init__(title, self.code, http_status, description, translation)
