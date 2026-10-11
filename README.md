@@ -712,6 +712,30 @@ além de rota, erro e tabela vem justificado aqui, em quatro linhas.
 4. *O que ela não faz:* não roda em produção, não guarda estado entre
    execuções, não substitui o teste ponta a ponta.
 
+### O erro gravado pela chave de idempotência (`PostingController.post`, fatia 05a)
+
+1. *Princípio da base tocado:* erro previsto não grava nada, e o controller
+   só commita depois que a regra passou.
+2. *Por que não funciona sem:* a mesma `Idempotency-Key` tem de devolver o
+   mesmo erro (D0003). Sem o erro gravado, a repetição — ou a requisição que
+   esperava no `INSERT` da mesma chave — roda o motor de novo e pode
+   responder outra coisa.
+3. *A peça, e por que é a menor:* um `SAVEPOINT` de execução logo depois do
+   registro da chave. No erro, `ROLLBACK TO SAVEPOINT` desfaz só o
+   movimento; o registro recebe o status e o código; e o commit é o da
+   mesma transação, sem sessão nova nem segundo commit.
+4. *O que ela não faz:* não grava falha de schema nem o `QIT001035` (que
+   saem antes do registro), não grava movimento pela metade, não tenta de
+   novo e não guarda a `description` dinâmica do erro.
+
+### O `QIT001010` também cobre o `end_to_end_id` repetido (fatia 05a)
+
+O guia e a RFC definem o `QIT001010` como "mesma chave, corpo diferente". Na
+entrada por Pix, o `end_to_end_id` é a chave natural do pagamento: o mesmo
+Pix chegando sob outra `Idempotency-Key` também responde `409 QIT001010`,
+e esse erro fica gravado sob a chave nova. Não é peça nova: é o mesmo
+código, com o significado estendido.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

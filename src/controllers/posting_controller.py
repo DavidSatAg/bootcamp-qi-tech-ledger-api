@@ -28,6 +28,10 @@ from utils.request_context import get_request_id
 IDEMPOTENCY_KEY_MAX_LENGTH = 255
 IDEMPOTENCY_TTL = timedelta(hours=24)
 
+# A UNIQUE(end_to_end_id) do database.sql não tem nome: este é o que o
+# Postgres dá a ela.
+END_TO_END_ID_CONSTRAINT = "ledger_transaction_end_to_end_id_key"
+
 
 class PostingController(BaseController):
     """O motor de postagem: o único caminho por onde o dinheiro se move
@@ -75,24 +79,65 @@ class PostingController(BaseController):
         `legs` = [(LedgerAccount, "D" | "C", centavos)];
         `purpose_pairs` = [(origem, destino)], contas a conferir na
         `purpose_rule`. O commit é a última linha.
+
+        O erro também é gravado (RN-11, desvio D-02), e por isso este é o
+        único controller que commita no caminho de erro:
+        1. Princípio tocado: erro previsto não grava nada, e o controller só
+           commita depois que a regra passou.
+        2. Por que não funciona sem: a mesma chave tem de devolver o mesmo
+           erro (D0003 :51-52). Sem o erro gravado, a repetição — ou a
+           requisição que esperava no INSERT da mesma chave — roda o motor
+           de novo e pode responder outra coisa.
+        3. A peça, e por que é a menor: um SAVEPOINT de execução logo depois
+           do registro. No erro, ROLLBACK TO SAVEPOINT desfaz só o movimento;
+           o registro recebe o status e o código; e o commit é o desta mesma
+           transação, sem sessão nova nem segundo commit.
+        4. O que não faz: não grava falha de schema nem o 035 (que saem antes
+           do registro), não grava movimento pela metade, não tenta de novo e
+           não guarda a description dinâmica do erro.
         """
         idempotency_record, replayed_key = self._register_idempotency_key(idempotency)
 
         if replayed_key is not None:
             return replayed_key
 
+        execution = self.session.begin_nested()
+        try:
+            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs)
+        except Exception as error:
+            execution.rollback()
+            qi_exception = self._as_qi_exception(error)
+            self.idempotency_record_repository.set_response(
+                idempotency_record, qi_exception.http_status, [qi_exception.code]
+            )
+            self.session.commit()
+            raise qi_exception from error
+
+        execution.commit()
+        self.idempotency_record_repository.set_response(idempotency_record, success_status, [ledger_transaction_key])
+        self.session.commit()
+
+        return ledger_transaction_key
+
+    def _execute(self, transaction: dict, legs: list, purpose_pairs: list) -> str:
+        """Passos 2, 3, 7 e 8. Os passos 4 a 6 (trava e saldo) entram entre o
+        3 e o 7 quando houver débito de passivo (fatia 07)."""
         self._check_accounts(legs)
         self._check_purpose_pairs(purpose_pairs)
 
         ledger_transaction = self._write(transaction, legs)
         self._check_balanced(ledger_transaction)
 
-        self.idempotency_record_repository.set_response(
-            idempotency_record, success_status, [ledger_transaction.ledger_transaction_key]
-        )
-        self.session.commit()
-
         return ledger_transaction.ledger_transaction_key
+
+    def _as_qi_exception(self, error: Exception) -> QIException:
+        """O erro como ele vai ser gravado e respondido: o nosso, como veio;
+        o imprevisto, logado e trocado pelo InternalError."""
+        if isinstance(error, QIException):
+            return error
+
+        self.logger.exception("Erro inesperado no motor de postagem")
+        return InternalError()
 
     def _register_idempotency_key(self, idempotency: dict) -> tuple:
         """Passo 1 (D0003 :56-60): SAVEPOINT + INSERT do registro, com a
@@ -191,8 +236,19 @@ class PostingController(BaseController):
                 raise PurposePairNotAllowed(source_purpose_code, target_purpose_code)
 
     def _write(self, transaction: dict, legs: list):
-        """Passo 7: o cabeçalho e as pernas."""
-        ledger_transaction = self.ledger_transaction_repository.create(transaction, get_request_id())
+        """Passo 7: o cabeçalho e as pernas.
+
+        O `end_to_end_id` já usado é a mesma entrada sob outra chave: 010,
+        gravado sob a chave nova (desvio D-01). Outra violação sobe como
+        está e vira InternalError.
+        """
+        try:
+            ledger_transaction = self.ledger_transaction_repository.create(transaction, get_request_id())
+        except IntegrityError as error:
+            constraint_name = getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+            if constraint_name == END_TO_END_ID_CONSTRAINT:
+                raise IdempotencyKeyConflict() from error
+            raise
 
         for ledger_account, direction, amount_in_cents in legs:
             self.ledger_entry_repository.create(ledger_transaction, ledger_account, direction, amount_in_cents)

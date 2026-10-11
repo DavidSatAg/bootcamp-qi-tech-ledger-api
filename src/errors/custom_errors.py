@@ -248,6 +248,9 @@ class IdempotencyKeyConflict(QIException):
     def __init__(self) -> None:
         title = "Idempotency key conflict"
         http_status = 409
-        description = "The Idempotency-Key was already used with a different request body."
+        description = (
+            "The Idempotency-Key was already used with a different request body, "
+            "or the end_to_end_id was already used under another Idempotency-Key."
+        )
         translation = "mesma chave de idempotência, corpo diferente"
         super().__init__(title, self.code, http_status, description, translation)

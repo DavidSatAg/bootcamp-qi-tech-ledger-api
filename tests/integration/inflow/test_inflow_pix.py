@@ -173,3 +173,24 @@ class TestInflowPix:
             assert response["code"] == "QIT001010"
 
         assert balance(collection_key) == 640000
+
+    def test_transfers_inflow_repeated_end_to_end_id_conflicts(self):
+        contract_key, collection_key = provision_contract()
+        payload = PayloadGenerator.create_inflow_payload(contract_key)
+
+        status, response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=str(uuid4()))
+        assert status == 201, response
+
+        other_key = str(uuid4())
+        status, response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=other_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001010"
+
+        # O erro ficou gravado sob a segunda chave: outro corpo com ela é conflito.
+        other_payload = PayloadGenerator.create_inflow_payload(contract_key)
+        status, response = RequestGenerator.POST_transfers_inflow(other_payload, idempotency_key=other_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001010"
+        assert balance(collection_key) == 640000
