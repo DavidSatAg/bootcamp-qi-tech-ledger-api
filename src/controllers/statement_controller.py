@@ -261,9 +261,22 @@ class StatementController(BaseController):
         }
 
     def _to_dict(self, statement, lines: list) -> dict:
+        """O extrato com os campos derivados de agora. `lines` são as do corte
+        = `created_at`; com elas e o `previous` gravado, o hash é recalculado:
+        verificar é recalcular (RN-10)."""
+        previous_statement = None
         previous_statement_key = None
         if statement.previous_statement_id is not None:
-            previous_statement_key = self.statement_repository.get_key_by_id(statement.previous_statement_id)
+            previous_statement = self.statement_repository.get_by_id(statement.previous_statement_id)
+            previous_statement_key = previous_statement.statement_key
+
+        recalculated_hash = self._content_hash(
+            statement.ledger_account.ledger_account_key,
+            statement.period_start,
+            statement.period_end,
+            previous_statement,
+            lines,
+        )
 
         supersedes_statement_key = None
         if statement.supersedes_statement_id is not None:
@@ -273,6 +286,7 @@ class StatementController(BaseController):
 
         return StatementDTO.obj_to_dict(
             statement,
+            recalculated_hash == statement.content_hash,
             lines,
             self._balances(statement, lines),
             previous_statement_key,

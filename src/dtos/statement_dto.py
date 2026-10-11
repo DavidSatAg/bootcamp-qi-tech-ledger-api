@@ -9,6 +9,7 @@ class StatementDTO:
     @staticmethod
     def obj_to_dict(
         statement: Statement,
+        content_hash_matches: bool,
         lines: list,
         balances: dict,
         previous_statement_key: str | None,
@@ -24,6 +25,7 @@ class StatementDTO:
         dto["period_end"] = utc_with_z(statement.period_end)
         dto["created_at"] = utc_with_z(statement.created_at)
         dto["content_hash"] = statement.content_hash
+        dto["content_hash_matches"] = content_hash_matches
         dto["previous_statement_key"] = previous_statement_key
         dto["supersedes_statement_key"] = supersedes_statement_key
         dto["superseded_by_statement_key"] = superseded_by_statement_key

@@ -16,6 +16,9 @@ class StatementRepository:
     def get_by_key(self, statement_key: str) -> Statement:
         return self.session.query(Statement).filter(Statement.statement_key == statement_key).first()
 
+    def get_by_id(self, statement_id: int) -> Statement:
+        return self.session.query(Statement).filter(Statement.id == statement_id).one()
+
     def get_key_by_id(self, statement_id: int) -> str:
         return self.session.query(Statement.statement_key).filter(Statement.id == statement_id).scalar()
 
