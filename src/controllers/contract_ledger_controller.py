@@ -128,12 +128,15 @@ class ContractLedgerController(BaseController):
         """
         seen_items = set()
         for item in payload["items"]:
-            item_key = (item["purpose_code"], item["beneficiary_party_key"])
+            # O dono da conta de destino, não o beneficiário: todo OWN cai na
+            # mesma own/OWN do cliente (desvio 5).
+            item_owner = self._item_owner(payload, item)
+            item_key = (item["purpose_code"], item_owner)
             if item_key in seen_items:
                 # Colidiriam na mesma linha do split_snapshot: é pedido
                 # malformado, e por isso 400, como o schema.
                 raise InvalidSchema(
-                    f"items has {item['purpose_code']} for {item['beneficiary_party_key']} more than once"
+                    f"items has {item['purpose_code']} for {item_owner} more than once"
                 )
             seen_items.add(item_key)
 

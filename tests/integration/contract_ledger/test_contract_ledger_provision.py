@@ -148,6 +148,7 @@ class TestContractLedgerProvision:
                 {"items": own_takes_everything, "platform_fee_percentage": "10.0001"},
                 "QIT001034",
             ),
+            ("taxa acima da administração", {"platform_fee_percentage": "10.0001"}, "QIT001034"),
         ]
 
         for name, overrides, expected_code in cases:
@@ -181,6 +182,12 @@ class TestContractLedgerProvision:
         duplicated_iptu = default_items()
         duplicated_iptu.append(dict(duplicated_iptu[2]))
 
+        two_owns = default_items()
+        second_own = next(dict(item) for item in two_owns if item["purpose_code"] == "OWN")
+        second_own["beneficiary_party_key"] = CARLOS
+        second_own["value"] = "1.0000"
+        two_owns.append(second_own)
+
         without_actor = PayloadGenerator.create_contract_ledger_payload()
         del without_actor["actor"]
 
@@ -195,6 +202,7 @@ class TestContractLedgerProvision:
             ("duas remainder", PayloadGenerator.create_contract_ledger_payload(items=two_remainders)),
             ("remainder de provider", PayloadGenerator.create_contract_ledger_payload(items=provider_remainder)),
             ("IPTU duplicado", PayloadGenerator.create_contract_ledger_payload(items=duplicated_iptu)),
+            ("dois OWN", PayloadGenerator.create_contract_ledger_payload(items=two_owns)),
             ("sem actor", without_actor),
             ("campo extra", extra_field),
             ("aluguel em texto", rent_as_text),
