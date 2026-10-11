@@ -63,3 +63,30 @@ class TestWalletDepositWithdrawal:
 
         assert status == 409, response
         assert response["code"] == "QIT001010"
+
+    def test_transfers_payout_pix_from_wallet_withdraws(self):
+        """O saque é o repasse Pix com origem na carteira, sem código novo
+        (remodelagem/10 :130): o dinheiro vai para a TRANSIT da plataforma
+        e o provedor recebe um Pix para a chave da Ana."""
+        wallet_key = ObjectGenerator.create_funded_wallet()
+        platform_transit = ObjectGenerator.get_client_account_key(PLATFORM_CLIENT, "TRANSIT")
+        wallet_before = balance(wallet_key)
+        platform_transit_before = balance(platform_transit)
+
+        status, response, _payload = ObjectGenerator.create_payout(wallet_key, amount_in_cents=wallet_before)
+
+        assert status == 202, response
+        outbox = response["outbox"]
+        assert outbox["outbox_status"] == "sent", outbox
+        assert outbox["beneficiary_party_key"] == ANA
+        assert balance(wallet_key) == 0
+        assert balance(platform_transit) == platform_transit_before + wallet_before
+
+        dispatches = [
+            body
+            for _headers, body in RequestGenerator.GET_mock_requests("provider-mock", "/pix")
+            if body is not None and body.get("dispatch_idempotency_key") == outbox["dispatch_idempotency_key"]
+        ]
+        assert len(dispatches) == 1, dispatches
+        assert dispatches[0]["pix_key"] == "ana.locadora@example.com"
+        assert dispatches[0]["amount_in_cents"] == wallet_before
