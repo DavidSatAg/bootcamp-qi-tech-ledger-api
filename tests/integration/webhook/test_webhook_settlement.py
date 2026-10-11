@@ -4,6 +4,7 @@ from uuid import uuid4
 from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+ANA = "22222222-2222-4222-8222-222222222222"
 
 
 def balance(ledger_account_key: str) -> int:
@@ -189,3 +190,19 @@ class TestWebhookSettlement:
         assert payout_link(payout)["outbox_status"] == "settled"
         assert len(links_of_type(payout, "settlement")) == 1
         assert moved(before, contract_ledger)["CLR"] == -450000
+
+    def test_webhooks_provider_settlement_failed_returns_to_earmark(self):
+        contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
+        before = balances(contract_ledger)
+
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"], event_type="settlement_failed")
+
+        assert status == 204, response
+        assert payout_link(payout)["outbox_status"] == "failed"
+        assert moved(before, contract_ledger) == {"CLR": -450000, "CASH": 0, "RENT": 450000}
+        dispatch_returns = links_of_type(payout, "dispatch_return")
+        assert len(dispatch_returns) == 1, dispatch_returns
+        assert entry_summary(dispatch_returns[0]["entries"]) == [
+            ("D", 450000, "clearing", "TRANSIT", None, None),
+            ("C", 450000, "earmark", "RENT", ANA, "landlord"),
+        ]

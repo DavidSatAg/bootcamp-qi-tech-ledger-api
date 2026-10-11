@@ -21,6 +21,8 @@ ENDPOINT = "POST /webhooks/provider"
 # resposta HTTP sai do resource, e os dois são o 204 da RFC :154.
 SUCCESS_STATUS = 204
 
+SETTLEMENT_FAILED = "settlement_failed"
+
 # Quem move o dinheiro na liquidação é o provedor (06:35-37; G:454).
 PROVIDER_ACTOR = "provider"
 
@@ -79,15 +81,24 @@ class WebhookController(BaseController):
     def _settle(self, payload: dict, outbox, value_date: datetime, raw_body: bytes) -> None:
         """As pernas do repasse dizem de onde o dinheiro saiu e quanto
         (RN-05): a confirmação tira o valor da `clearing` para o `external`
-        do cliente; o motor posta e leva a outbox a `settled` (RN-06, RN-07)."""
-        _source, clearing, amount_in_cents = self._payout_legs(outbox)
+        do cliente e leva a outbox a `settled`; a falha o devolve à origem
+        (`dispatch_return`, D0006) e leva a outbox a `failed`. O motor posta
+        (RN-06, RN-07)."""
+        source, clearing, amount_in_cents = self._payout_legs(outbox)
         payout = self.ledger_transaction_repository.get_by_key(
             self.ledger_transaction_repository.get_key_by_id(outbox.ledger_transaction_id)
         )
 
-        external = self.ledger_account_repository.find_by_natural_key(
-            clearing.client_key, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
-        )
+        if payload["event_type"] == SETTLEMENT_FAILED:
+            target = source
+            ledger_transaction_type = LedgerTransactionType.DISPATCH_RETURN
+            outbox_status = OutboxStatus.FAILED
+        else:
+            target = self.ledger_account_repository.find_by_natural_key(
+                clearing.client_key, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+            )
+            ledger_transaction_type = LedgerTransactionType.SETTLEMENT
+            outbox_status = OutboxStatus.SETTLED
 
         # O escopo da chave é o livro da `clearing`, que é o debitado (D1).
         idempotency = {
@@ -97,7 +108,7 @@ class WebhookController(BaseController):
             "raw_body": raw_body,
         }
         transaction = {
-            "ledger_transaction_type": LedgerTransactionType.SETTLEMENT,
+            "ledger_transaction_type": ledger_transaction_type,
             "contract_key": payout.contract_key,
             "period_reference": payout.period_reference,
             "value_date": value_date,
@@ -106,9 +117,9 @@ class WebhookController(BaseController):
         }
         legs = [
             (clearing, LedgerEntry.DEBIT, amount_in_cents),
-            (external, LedgerEntry.CREDIT, amount_in_cents),
+            (target, LedgerEntry.CREDIT, amount_in_cents),
         ]
-        purpose_pairs = [(clearing, external)]
+        purpose_pairs = [(clearing, target)]
 
         posting_controller = PostingController()
         posting_controller.post(
@@ -117,7 +128,7 @@ class WebhookController(BaseController):
             legs,
             purpose_pairs,
             SUCCESS_STATUS,
-            after_write=lambda ledger_transaction: self._close_outbox(outbox, OutboxStatus.SETTLED, payload),
+            after_write=lambda ledger_transaction: self._close_outbox(outbox, outbox_status, payload),
             # O erro não fica gravado: o provedor repete o mesmo aviso, e
             # ele tem de rodar de novo (RN-06, D-02).
             record_error=False,
