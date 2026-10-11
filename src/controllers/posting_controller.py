@@ -81,6 +81,7 @@ class PostingController(BaseController):
         success_status: int,
         after_lock=None,
         after_write=None,
+        record_error=True,
     ) -> str:
         """Posta uma transação e devolve a `ledger_transaction_key`.
 
@@ -93,6 +94,8 @@ class PostingController(BaseController):
         depende da trava (passo 5), chamada sem argumentos logo depois dela;
         `after_write`, se vier, recebe a transação gravada depois do passo 8,
         no mesmo SAVEPOINT (a outbox do repasse, fatia 09 RN-06).
+        Com `record_error=False`, o erro não é gravado e desfaz a transação
+        inteira (o webhook do provedor, fatia 10 RN-06).
         O commit é a última linha.
 
         O erro também é gravado (RN-11, desvio D-02), e por isso este é o
@@ -110,6 +113,9 @@ class PostingController(BaseController):
         4. O que não faz: não grava falha de schema nem o 035 (que saem antes
            do registro), não grava movimento pela metade, não tenta de novo e
            não guarda a description dinâmica do erro.
+           Nem grava o erro do webhook do provedor (`record_error=False`,
+           fatia 10, D-02): lá a idempotência é a do `provider_event`, e o
+           erro desfaz a transação inteira, com o `provider_event` junto.
         """
         idempotency_record, replayed_key = self._register_idempotency_key(idempotency)
 
@@ -122,6 +128,9 @@ class PostingController(BaseController):
         except Exception as error:
             execution.rollback()
             qi_exception = self._as_qi_exception(error)
+            if not record_error:
+                self.session.rollback()
+                raise qi_exception from error
             self.idempotency_record_repository.set_response(
                 idempotency_record, qi_exception.http_status, [qi_exception.code]
             )

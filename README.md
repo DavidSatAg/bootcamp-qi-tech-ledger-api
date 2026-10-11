@@ -727,6 +727,9 @@ além de rota, erro e tabela vem justificado aqui, em quatro linhas.
 4. *O que ela não faz:* não grava falha de schema nem o `QIT001035` (que
    saem antes do registro), não grava movimento pela metade, não tenta de
    novo e não guarda a `description` dinâmica do erro.
+   Nem grava o erro do webhook do provedor (`record_error=False`, fatia
+   10): lá a idempotência é a do `provider_event`, e o erro desfaz a
+   transação inteira, com o `provider_event` junto.
 
 ### O `QIT001010` também cobre o `end_to_end_id` repetido (fatia 05a)
 
