@@ -212,6 +212,21 @@ class LedgerAccountRepository:
                 return None
             raise
 
+    def get_statuses(self, ledger_account_ids: list) -> dict:
+        """{id: status} das contas, lido agora do banco.
+
+        Colunas, e não entidades: a sessão devolveria o status que já
+        guardava das contas, e não o que outra transação acabou de commitar.
+        """
+        rows = (
+            self.session.query(LedgerAccount.id, LedgerAccountStatus.enumerator)
+            .join(LedgerAccountStatus, LedgerAccount.ledger_account_status_id == LedgerAccountStatus.id)
+            .filter(LedgerAccount.id.in_(ledger_account_ids))
+            .all()
+        )
+
+        return {ledger_account_id: enumerator for ledger_account_id, enumerator in rows}
+
     def find_contract_account(self, contract_key: str, purpose_code: str) -> LedgerAccount:
         """A conta do contrato com esse propósito (a COLLECTION, na entrada),
         ou None se o contrato não foi provisionado."""

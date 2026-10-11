@@ -746,6 +746,18 @@ lista cheia: a suíte prova só que ela sai vazia. O negativo **com** estorno,
 que não entra na lista, é o caso que a fatia 11 prova (CU-H2). Não é peça
 nova: é um limite declarado.
 
+### A trava de uma linha no teste (`DbUtils.hold_row_lock`, fatia 08)
+
+1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
+2. *Por que não funciona sem:* a ordem "entrada passa o passo 2 →
+   encerramento commita → entrada grava o passo 7" não se produz por HTTP;
+   o `Barrier` (CA-07) só a sorteia, e sem ela a RN-08 não tem vermelho.
+3. *A peça, e por que é a menor:* trava **uma** linha, em conexão própria,
+   pelo tempo do `with`; não muda nada, e o `ROLLBACK` a solta.
+4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
+   executa SQL livre, não lê dado para asserção, não monta cenário — o
+   cenário nasce por `POST`.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

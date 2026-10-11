@@ -19,6 +19,7 @@ from errors import (
 from models import LedgerAccountStatus
 from repositories import (
     IdempotencyRecordRepository,
+    LedgerAccountRepository,
     LedgerEntryRepository,
     LedgerTransactionRepository,
     PurposeRuleRepository,
@@ -46,6 +47,7 @@ class PostingController(BaseController):
         self.idempotency_record_repository = IdempotencyRecordRepository(self.context)
         self.ledger_transaction_repository = LedgerTransactionRepository(self.context)
         self.ledger_entry_repository = LedgerEntryRepository(self.context)
+        self.ledger_account_repository = LedgerAccountRepository(self.context)
         self.purpose_rule_repository = PurposeRuleRepository(self.context)
 
     @staticmethod
@@ -126,6 +128,7 @@ class PostingController(BaseController):
         self._check_purpose_pairs(purpose_pairs)
 
         ledger_transaction = self._write(transaction, legs)
+        self._recheck_accounts(legs)
         self._check_balanced(ledger_transaction)
 
         return ledger_transaction.ledger_transaction_key
@@ -220,6 +223,24 @@ class PostingController(BaseController):
 
         if len(currencies) > 1:
             raise CurrencyMismatch()
+
+    def _recheck_accounts(self, legs: list) -> None:
+        """O passo 2 de novo, depois de gravar as pernas e antes do passo 8
+        (fatia 08, RN-08).
+
+        O passo 2 lê o status sem trava. Um encerramento que trave as contas
+        entre ele e o passo 7 faz o INSERT da perna esperar na FK (o `FOR
+        KEY SHARE` da conta conflita com o `FOR UPDATE` do encerramento) até
+        o commit dele; daí em diante, só esta releitura vê o `closed`. Sem
+        ela, a conta fecharia com saldo. Lê colunas, não entidades, e não
+        trava nada (D0007: crédito nunca trava).
+        """
+        ledger_account_ids = [ledger_account.id for ledger_account, _direction, _amount_in_cents in legs]
+        statuses = self.ledger_account_repository.get_statuses(ledger_account_ids)
+
+        for ledger_account_id in ledger_account_ids:
+            if statuses[ledger_account_id] != LedgerAccountStatus.ACTIVE:
+                raise LedgerAccountNotMovable()
 
     def _check_purpose_pairs(self, purpose_pairs: list) -> None:
         """Passo 3, antes de qualquer trava: cada par está na `purpose_rule`,
