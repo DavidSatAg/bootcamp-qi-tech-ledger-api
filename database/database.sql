@@ -161,3 +161,47 @@ CREATE TABLE split_snapshot(
     CHECK (allocation_type IN ('percentage', 'fixed', 'remainder'))
 );
 
+-- --- Nucleo contabil ------------------------------------------------
+
+CREATE TABLE ledger_transaction_type(
+    id          SERIAL PRIMARY KEY,
+    enumerator  VARCHAR(50) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(enumerator)
+);
+INSERT INTO ledger_transaction_type (enumerator) VALUES     -- A ORDEM IMPORTA
+('inflow'), ('allocation'), ('split'), ('internal'),
+('payout'), ('settlement'), ('dispatch_return'), ('reversal');
+
+CREATE TABLE ledger_transaction(
+    id                          SERIAL PRIMARY KEY,
+    ledger_transaction_key      CHAR(36) NOT NULL,
+    ledger_transaction_type_id  INTEGER NOT NULL REFERENCES ledger_transaction_type(id),
+    contract_key                VARCHAR(36) NOT NULL DEFAULT '',
+    period_reference            VARCHAR(7)  NOT NULL DEFAULT '',
+    split_version               INTEGER,
+    -- de quem era: so na entrada. Declarado pelo ERP; verificado na carteira
+    payer_party_key             VARCHAR(36) NOT NULL DEFAULT '',
+    -- o Pix de entrada: e por ele que o MED acha o original
+    end_to_end_id               VARCHAR(64),
+    value_date                  TIMESTAMPTZ NOT NULL,
+    actor                       VARCHAR(255) NOT NULL,
+    reason                      VARCHAR(255),
+    trace_id                    VARCHAR(64) NOT NULL,
+    reverses_transaction_id     INTEGER REFERENCES ledger_transaction(id),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(ledger_transaction_key),
+    UNIQUE(end_to_end_id)
+);
+
+CREATE TABLE ledger_entry(
+    id                      SERIAL PRIMARY KEY,
+    ledger_transaction_id   INTEGER NOT NULL REFERENCES ledger_transaction(id),
+    ledger_account_id       INTEGER NOT NULL REFERENCES ledger_account(id),
+    direction               CHAR(1) NOT NULL,
+    amount_in_cents         NUMERIC(20,0) NOT NULL,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    CHECK (direction IN ('D', 'C')),
+    CHECK (amount_in_cents > 0)
+);
+
