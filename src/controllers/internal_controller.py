@@ -5,7 +5,7 @@ from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
 from errors import CrossesClientBooks, InternalError, InvalidSchema, LedgerAccountNotFound
-from models import LedgerEntry, LedgerTransactionType
+from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
 from repositories import LedgerAccountRepository, LedgerTransactionRepository
 
 ENDPOINT = "POST /transfers/internal"
@@ -44,7 +44,7 @@ class InternalController(BaseController):
         # Sem contrato, sem competência, sem pagador: a interna fica fora da
         # cadeia de contrato (RN-05, D6).
         transaction = {
-            "ledger_transaction_type": LedgerTransactionType.INTERNAL,
+            "ledger_transaction_type": self._transaction_type(source),
             "contract_key": "",
             "period_reference": "",
             "split_version": None,
@@ -82,6 +82,18 @@ class InternalController(BaseController):
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
         return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    @staticmethod
+    def _transaction_type(source) -> str:
+        """`allocation` quando a origem é o `suspense/UNALLOCATED` (CU-B3,
+        alocar o dinheiro sem identificação); senão `internal` (15b RN-08)."""
+        if (
+            source.ledger_account_type.enumerator == LedgerAccountType.SUSPENSE
+            and source.purpose_code.enumerator == PurposeCode.UNALLOCATED
+        ):
+            return LedgerTransactionType.ALLOCATION
+
+        return LedgerTransactionType.INTERNAL
 
     @staticmethod
     def _check_same_client_books(source, legs: list) -> None:

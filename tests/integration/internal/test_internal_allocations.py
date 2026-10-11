@@ -2,6 +2,8 @@ from uuid import uuid4
 
 from tests.utils import ObjectGenerator, RequestGenerator
 
+ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+
 
 def provision_contract(**kwargs) -> dict:
     """Provisiona um contrato novo e devolve a chave de cada conta, pelo propósito."""
@@ -19,6 +21,17 @@ def collected_contract() -> dict:
     keys = provision_contract()
 
     status, response, _payload = ObjectGenerator.create_inflow(keys["contract_key"])
+    assert status == 201, response
+
+    return keys
+
+
+def divided_contract() -> dict:
+    """P + TX1 + TX2: COLLECTION 0, RENT 450000, IPTU 30000, e a `own` da
+    Alfa com +45000."""
+    keys = collected_contract()
+
+    status, response, _payload = ObjectGenerator.create_split(keys["contract_key"])
     assert status == 201, response
 
     return keys
@@ -52,6 +65,67 @@ def remainder(target_account_key: str) -> dict:
 
 
 class TestInternalAllocations:
+    def test_transfers_internal_allocates_suspense_to_collection(self):
+        """CU-B3 e J1: o dinheiro sem identificação sai do suspense para a
+        COLLECTION do contrato, numa transação `allocation`."""
+        keys = provision_contract()
+        status, response, _payload = ObjectGenerator.create_suspense_inflow()
+        assert status == 201, response
+        suspense = ObjectGenerator.get_client_account_key(ALFA_CLIENT, "UNALLOCATED")
+        external = ObjectGenerator.get_client_account_key(ALFA_CLIENT, "CASH")
+        suspense_before = balance(suspense)
+        external_before = balance(external)
+
+        status, response, _payload = ObjectGenerator.create_internal(
+            suspense, keys["COLLECTION"], gross_amount_in_cents=640000
+        )
+
+        assert status == 201, response
+        assert response["ledger_transaction_type"] == "allocation"
+        assert response["contract_key"] is None
+        assert legs(response["ledger_transaction_key"]) == [
+            ("D", suspense, 640000),
+            ("C", keys["COLLECTION"], 640000),
+        ]
+        assert balance(keys["COLLECTION"]) == 640000
+        assert balance(suspense) - suspense_before == -640000
+        assert balance(external) == external_before
+
+    def test_transfers_internal_same_purpose_refused(self):
+        """CU-C6: RENT → RENT de outro contrato não tem par (G:113)."""
+        contract_a = divided_contract()
+        contract_b = provision_contract()
+        assert balance(contract_a["RENT"]) == 450000
+
+        status, response, _payload = ObjectGenerator.create_internal(
+            contract_a["RENT"], contract_b["RENT"], gross_amount_in_cents=450000
+        )
+
+        assert status == 422, response
+        assert response["code"] == "QIT001008"
+        assert balance(contract_a["RENT"]) == 450000
+        assert balance(contract_b["RENT"]) == 0
+
+    def test_transfers_internal_above_balance_returns_422(self):
+        """CU-B4 e F8: nem o suspense nem a `own` saem acima do saldo; o
+        menor valor acima dele é S + 1."""
+        keys = provision_contract()
+        status, response, _payload = ObjectGenerator.create_suspense_inflow()
+        assert status == 201, response
+        sources = [ObjectGenerator.get_client_account_key(ALFA_CLIENT, "UNALLOCATED"), keys["OWN"]]
+
+        for source in sources:
+            source_balance = balance(source)
+
+            status, response, _payload = ObjectGenerator.create_internal(
+                source, keys["COLLECTION"], gross_amount_in_cents=source_balance + 1
+            )
+
+            assert status == 422, (source, response)
+            assert response["code"] == "QIT001009", (source, response)
+            assert balance(source) == source_balance
+            assert balance(keys["COLLECTION"]) == 0
+
     def test_transfers_internal_splits_into_three_allocations(self):
         """CU-J2 (D0013 :41-48): percentual, fixo e `remainder` num pedido
         só; a mesma chave e o mesmo corpo devolvem a mesma transação."""
