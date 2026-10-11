@@ -72,6 +72,17 @@ class TestOutboxDispatch:
         # O banco foi zerado: a clearing estava em 0 antes do repasse.
         assert balance(clearing_key()) == 450000
 
+    def test_outbox_dispatch_skips_row_locked_elsewhere(self):
+        payout, _payload, _idempotency_key = pending_payout()
+        outbox = payout["outbox"]
+
+        with DbUtils.hold_outbox_lock(outbox["outbox_key"]):
+            assert sweep(10) == {"sent": 0, "pending": 0, "dead": 0}
+            assert len(pix_dispatches(outbox["dispatch_idempotency_key"])) == 1
+
+        assert sweep(10) == {"sent": 0, "pending": 1, "dead": 0}
+        assert len(pix_dispatches(outbox["dispatch_idempotency_key"])) == 2
+
     def test_outbox_dispatch_limit_and_body(self):
         DbUtils.rollback()
         first_key = str(uuid4())

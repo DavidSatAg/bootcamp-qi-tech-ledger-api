@@ -208,3 +208,36 @@ class DbUtils:
                     transaction.rollback()
         finally:
             engine.dispose()
+
+    @staticmethod
+    @contextmanager
+    def hold_outbox_lock(outbox_key: str):
+        """Trava uma outbox com `FOR UPDATE`, numa conexão própria, pelo tempo
+        do `with`; na saída, `ROLLBACK` solta a trava.
+
+        Peça acrescentada pelo Ledger (fatia 14), com as quatro linhas:
+        1. Princípio tocado: "`db_utils` só zera, nunca monta cenário".
+        2. Por que não funciona sem: duas reivindicações simultâneas da mesma
+           linha não se produzem por HTTP de forma determinística; sem ela a
+           RN-06 (a linha travada por outro é pulada) não tem vermelho.
+        3. A peça, e por que é a menor: o `hold_row_lock` sobre `outbox`:
+           uma linha, em conexão própria, pelo `with`; o `ROLLBACK` a solta.
+        4. O que não faz: não escreve (`INSERT`, `UPDATE`, `DELETE`), não
+           executa SQL livre, não lê dado para asserção, não monta cenário —
+           o cenário nasce por `POST`.
+        """
+        engine = create_engine(DbUtils.database_url())
+
+        try:
+            with engine.connect() as connection:
+                transaction = connection.begin()
+                try:
+                    connection.execute(
+                        text("SELECT id FROM outbox WHERE outbox_key = :k FOR UPDATE"),
+                        {"k": outbox_key},
+                    )
+                    yield
+                finally:
+                    transaction.rollback()
+        finally:
+            engine.dispose()

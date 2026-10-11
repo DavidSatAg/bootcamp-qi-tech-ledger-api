@@ -114,17 +114,15 @@ class OutboxRepository:
         travada até o fim da transação e relida do banco, se ainda está em
         `pending`; senão, None.
 
-        A espera vai até o `lock_timeout`, com o `set_config(..., true)` do
-        `get_by_key_for_update`; estourar sobe como está (`55P03`).
+        `SKIP LOCKED`: a linha que outro travou (a fila, o despacho inline,
+        o webhook) não espera, sai None. Sem espera não há `011` nem ciclo.
         """
         pending_status = self.get_status(OutboxStatus.PENDING)
-
-        self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
 
         return (
             self.session.query(Outbox)
             .filter(Outbox.id == outbox_id, Outbox.outbox_status_id == pending_status.id)
-            .with_for_update(of=Outbox)
+            .with_for_update(skip_locked=True, of=Outbox)
             .populate_existing()
             .first()
         )

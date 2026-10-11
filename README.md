@@ -836,6 +836,19 @@ O despacho inline do repasse passa pela mesma reivindicação: se a fila já
 tem a linha, o `POST /transfers/payout` responde com a outbox no estado em
 que ela está, sem despachar de novo.
 
+### A trava de uma outbox no teste (`DbUtils.hold_outbox_lock`, fatia 14)
+
+1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
+2. *Por que não funciona sem:* duas reivindicações simultâneas da mesma
+   linha da outbox não se produzem por HTTP de forma determinística; sem
+   ela, "a linha travada por outro é pulada" não tem vermelho.
+3. *A peça, e por que é a menor:* o `hold_row_lock` sobre `outbox`: trava
+   **uma** linha, em conexão própria, pelo tempo do `with`; o `ROLLBACK` a
+   solta.
+4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
+   executa SQL livre, não lê dado para asserção, não monta cenário — o
+   cenário nasce por `POST`.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e
