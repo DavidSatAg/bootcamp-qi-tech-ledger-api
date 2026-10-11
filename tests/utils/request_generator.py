@@ -385,3 +385,13 @@ class RequestGenerator:
             yield
         finally:
             requests.delete(f"{admin_url}/{mapping_id}", timeout=5)
+
+    @staticmethod
+    def send_readme_curl(method: str, path: str, headers: dict, raw_body: bytes = None) -> tuple:
+        """Um `curl` do README §11, já desmontado: verbo, caminho (com a query),
+        os cabeçalhos do `-H` e os bytes do `-d`, como estão. Os cabeçalhos
+        vão como o README os escreveu, sem o `INTERNAL-TOKEN` daqui: o
+        `/statement/verify` vai sem ele. Devolve (status, corpo)."""
+        response = ClientRequisition.send(method, path, headers=headers, data=raw_body)
+
+        return response.response_status, response.response_json

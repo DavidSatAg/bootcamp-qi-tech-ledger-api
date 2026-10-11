@@ -904,3 +904,205 @@ docker compose up -d api db provider-mock
 
 Precisa dos dois mocks de pé ao mesmo tempo e a `8091` está ocupada?
 Troque o `PARTY_MOCK_PORT` no `.env`.
+
+## 11. As rotas do Ledger, uma a uma
+
+Toda rota do Ledger, com o verbo e o caminho como estão no `src/app.py`:
+
+| Verbo | Caminho | O que faz |
+|---|---|---|
+| `GET` | `/ledger_accounts/{ledger_account_key}` | lê uma conta e o saldo dela |
+| `POST` | `/contract_ledgers` | provisiona o livro do contrato (as contas do split) |
+| `POST` | `/contract_ledgers/{contract_key}/closure` | encerra as contas do contrato |
+| `GET` | `/ledger_accounts` | lista as contas de um cliente, contrato ou dono |
+| `PUT` | `/ledger_accounts/{ledger_account_key}/status` | bloqueia, desbloqueia ou encerra uma conta |
+| `POST` | `/transfers/inflow` | entrada por Pix: no contrato ou depósito na carteira |
+| `GET` | `/transfers/{ledger_transaction_key}/trace` | rastreia a transação e a cadeia do contrato |
+| `POST` | `/transfers/split` | divide a competência do contrato |
+| `POST` | `/transfers/payout` | repassa ao dono da conta, por Pix ou para a carteira |
+| `POST` | `/transfers/internal` | move entre contas do mesmo livro |
+| `POST` | `/transfers/{ledger_transaction_key}/reversal` | estorna uma transação |
+| `GET` | `/transfers` | lista as transações de um pagador, ou de um contrato na competência |
+| `GET` | `/integrity` | confere que o livro fecha em zero |
+| `POST` | `/statement` | emite o extrato do período, com hash encadeado |
+| `POST` | `/statement/verify` | diz se um hash de extrato bate (pública) |
+| `GET` | `/statement/{statement_key}` | lê um extrato |
+| `POST` | `/webhooks/provider` | o aviso do provedor: liquidação ou MED |
+| `POST` | `/wallets` | abre a carteira de uma parte |
+| `POST` | `/outbox/dispatch` | despacha os repasses que ficaram `pending` |
+
+Os exemplos seguem o caso do `remodelagem/05`, no contrato
+`0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c` da Imobiliária Alfa, e rodam no Git
+Bash, na ordem, com a pilha da seção 10 de pé. Toda rota pede o
+`INTERNAL-TOKEN`, menos o `/statement/verify`. Um valor que só o servidor
+conhece aparece como `$NOME`: copie-o da resposta indicada e defina a
+variável antes de rodar o bloco (`RENT_KEY=...`).
+
+O provisionamento (`01b` §3). Da resposta, em `accounts`, saem o
+`ledger_account_key` da `RENT` (`$RENT_KEY`), o da `OWN` (`$OWN_KEY`) e o
+da `COLLECTION` (`$COLLECTION_KEY`).
+
+```bash
+curl -X POST http://localhost:3003/contract_ledgers \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"contract_key": "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c", "client_key": "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1", "client_party_key": "11111111-1111-4111-8111-111111111111", "split_version": 1, "rent_amount_in_cents": 500000, "platform_fee_percentage": "1.0000", "items": [{"purpose_code": "RENT", "beneficiary_party_key": "22222222-2222-4222-8222-222222222222", "beneficiary_role": "landlord", "type": "remainder"}, {"purpose_code": "OWN", "beneficiary_party_key": "11111111-1111-4111-8111-111111111111", "beneficiary_role": "administrator", "type": "percentage", "value": "10.0000"}, {"purpose_code": "IPTU", "beneficiary_party_key": "44444444-4444-4444-8444-444444444444", "beneficiary_role": "provider", "type": "fixed", "value": 30000}, {"purpose_code": "CONDO", "beneficiary_party_key": "55555555-5555-4555-8555-555555555555", "beneficiary_role": "provider", "type": "fixed", "value": 80000}, {"purpose_code": "WATER", "beneficiary_party_key": "66666666-6666-4666-8666-666666666666", "beneficiary_role": "provider", "type": "fixed", "value": 12000}, {"purpose_code": "ELECTRICITY", "beneficiary_party_key": "77777777-7777-4777-8777-777777777777", "beneficiary_role": "provider", "type": "fixed", "value": 18000}], "actor": "contract-api", "reason": "ativacao do contrato ALFA-2026-0042"}'
+```
+
+As contas do contrato, e uma delas pela chave:
+
+```bash
+curl -X GET "http://localhost:3003/ledger_accounts?contract_key=0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c" \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+```bash
+curl -X GET http://localhost:3003/ledger_accounts/$RENT_KEY \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+A TX1, o Pix do Bruno, com a `Idempotency-Key` igual ao `end_to_end_id`.
+Da resposta sai o `ledger_transaction_key` (`$INFLOW_KEY`).
+
+```bash
+curl -X POST http://localhost:3003/transfers/inflow \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: E00000000202609051422abc" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_in_cents": 640000, "contract_key": "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c", "period_reference": "2026-09", "payer_party_key": "33333333-3333-4333-8333-333333333333", "end_to_end_id": "E00000000202609051422abc", "value_date": "2026-09-05T14:22:00Z", "actor": "erp-alfa"}'
+```
+
+A TX2, a divisão da competência:
+
+```bash
+curl -X POST http://localhost:3003/transfers/split \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: split-0c0c-2026-09" \
+  -H "Content-Type: application/json" \
+  -d '{"contract_key": "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c", "period_reference": "2026-09", "value_date": "2026-09-05T14:23:00Z", "actor": "erp-alfa"}'
+```
+
+O rastreio da TX1, com a cadeia do contrato na competência:
+
+```bash
+curl -X GET http://localhost:3003/transfers/$INFLOW_KEY/trace \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+As transações do contrato na competência:
+
+```bash
+curl -X GET "http://localhost:3003/transfers?contract_key=0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c&period_reference=2026-09" \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+A TX3, o repasse dos 450000 da `RENT` à Ana. Da resposta, em `outbox`, saem
+o `outbox_key` (`$OUTBOX_KEY`) e a `dispatch_idempotency_key`
+(`$DISPATCH_KEY`).
+
+```bash
+curl -X POST http://localhost:3003/transfers/payout \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: repasse-0c0c-rent-2026-09" \
+  -H "Content-Type: application/json" \
+  -d '{"source_account_key": "'"$RENT_KEY"'", "amount_in_cents": 450000, "destination": "pix", "period_reference": "2026-09", "actor": "erp-alfa", "reason": "repasse aluguel 09/2026"}'
+```
+
+A TX4, o provedor confirma a liquidação do repasse:
+
+```bash
+curl -X POST http://localhost:3003/webhooks/provider \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"provider_reference": "PRV-'"$DISPATCH_KEY"'-SETTLED", "event_type": "settlement_confirmed", "outbox_key": "'"$OUTBOX_KEY"'", "value_date": "2026-09-06T10:00:00Z"}'
+```
+
+A fila da outbox: despacha o repasse que ficou `pending` (o provedor fora
+do ar na TX3, por exemplo), até `limit` linhas por chamada:
+
+```bash
+curl -X POST http://localhost:3003/outbox/dispatch \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 10}'
+```
+
+O estorno da TX1, pelo ERP:
+
+```bash
+curl -X POST http://localhost:3003/transfers/$INFLOW_KEY/reversal \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: estorno-0c0c-tx1" \
+  -H "Content-Type: application/json" \
+  -d '{"actor": "erp-alfa", "reason": "estorno do aluguel 09/2026"}'
+```
+
+A TX8, a Alfa devolve a própria taxa ao contrato:
+
+```bash
+curl -X POST http://localhost:3003/transfers/internal \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: devolucao-taxa-0c0c-2026-09" \
+  -H "Content-Type: application/json" \
+  -d '{"source_account_key": "'"$OWN_KEY"'", "gross_amount_in_cents": 45000, "allocations": [{"target_account_key": "'"$COLLECTION_KEY"'", "type": "remainder"}], "actor": "gerente-financeiro@alfa", "reason": "devolucao de taxa - MED 09/2026"}'
+```
+
+A integridade do livro da Alfa:
+
+```bash
+curl -X GET "http://localhost:3003/integrity?client_key=c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1" \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+O extrato de setembro da `RENT`. Da resposta saem o `statement_key`
+(`$STATEMENT_KEY`) e o `content_hash` (`$CONTENT_HASH`).
+
+```bash
+curl -X POST http://localhost:3003/statement \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Idempotency-Key: extrato-0c0c-rent-2026-09" \
+  -H "Content-Type: application/json" \
+  -d '{"ledger_account_key": "'"$RENT_KEY"'", "period_start": "2026-09-01T00:00:00Z", "period_end": "2026-10-01T00:00:00Z", "actor": "erp-alfa"}'
+```
+
+```bash
+curl -X GET http://localhost:3003/statement/$STATEMENT_KEY \
+  -H "INTERNAL-TOKEN: default_token"
+```
+
+A verificação do hash, pública, sem o `INTERNAL-TOKEN`:
+
+```bash
+curl -X POST http://localhost:3003/statement/verify \
+  -H "Content-Type: application/json" \
+  -d '{"content_hash": "'"$CONTENT_HASH"'"}'
+```
+
+A carteira da Ana:
+
+```bash
+curl -X POST http://localhost:3003/wallets \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"party_key": "22222222-2222-4222-8222-222222222222", "actor": "erp-alfa"}'
+```
+
+O bloqueio de uma conta. Da resposta do provisionamento, em `accounts`, sai
+o `ledger_account_key` do `IPTU` (`$IPTU_KEY`):
+
+```bash
+curl -X PUT http://localhost:3003/ledger_accounts/$IPTU_KEY/status \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "blocked", "actor": "erp-alfa", "reason": "conferencia do IPTU 09/2026"}'
+```
+
+O encerramento do contrato (`01b` §4). Com saldo retido em alguma conta, a
+resposta é `409 QIT001037`.
+
+```bash
+curl -X POST http://localhost:3003/contract_ledgers/0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c/closure \
+  -H "INTERNAL-TOKEN: default_token" \
+  -H "Content-Type: application/json" \
+  -d '{"actor": "contract-api", "reason": "fim da locacao ALFA-2026-0042"}'
+```
