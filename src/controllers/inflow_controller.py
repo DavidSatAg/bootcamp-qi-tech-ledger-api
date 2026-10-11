@@ -27,7 +27,11 @@ class InflowController(BaseController):
 
     def create(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
         """Confere a chave, acha as duas contas e a data-valor, nesta ordem
-        (RN-02), e entrega as pernas ao motor."""
+        (RN-02), e entrega as pernas ao motor.
+
+        O destino é o contrato, a carteira (12) ou, só com `client_key`, o
+        suspense do cliente (05b); o schema garante que vem um e só um.
+        """
         PostingController.require_idempotency_key(idempotency_key)
 
         # O pagamento com a carteira: o schema já garantiu que veio sem
@@ -41,34 +45,20 @@ class InflowController(BaseController):
             return self._create_deposit(payload, idempotency_key, raw_body)
 
         if "client_key" in payload:
-            self._suspense_destination(payload)
+            legs, purpose_pairs, transaction = self._suspense_destination(payload)
+        else:
+            legs, purpose_pairs, transaction = self._contract_destination(payload)
 
-        collection, external = self._find_accounts(payload)
-        value_date = self._value_date(payload)
+        transaction["value_date"] = self._value_date(payload)
 
         # O escopo da chave é o livro debitado: o `external` do cliente.
+        external = legs[0][0]
         idempotency = {
             "client_key": external.client_key,
             "endpoint": ENDPOINT,
             "key": idempotency_key,
             "raw_body": raw_body,
         }
-        transaction = {
-            "ledger_transaction_type": LedgerTransactionType.INFLOW,
-            "contract_key": payload["contract_key"],
-            "period_reference": payload["period_reference"],
-            "payer_party_key": payload["payer_party_key"],
-            "end_to_end_id": payload["end_to_end_id"],
-            "value_date": value_date,
-            "actor": payload["actor"],
-            "reason": payload.get("reason"),
-        }
-        amount_in_cents = payload["amount_in_cents"]
-        legs = [
-            (external, LedgerEntry.DEBIT, amount_in_cents),
-            (collection, LedgerEntry.CREDIT, amount_in_cents),
-        ]
-        purpose_pairs = [(external, collection)]
 
         posting_controller = PostingController()
         ledger_transaction_key = posting_controller.post(
@@ -78,6 +68,23 @@ class InflowController(BaseController):
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
         return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    def _contract_destination(self, payload: dict) -> tuple:
+        """`D external/CASH / C COLLECTION` do contrato: as pernas, o par de
+        propósito e as colunas da transação, menos a data-valor."""
+        collection, external = self._find_accounts(payload)
+
+        amount_in_cents = payload["amount_in_cents"]
+        legs = [
+            (external, LedgerEntry.DEBIT, amount_in_cents),
+            (collection, LedgerEntry.CREDIT, amount_in_cents),
+        ]
+        purpose_pairs = [(external, collection)]
+        transaction = self._transaction(
+            payload, payload["contract_key"], payload["period_reference"], payload["payer_party_key"]
+        )
+
+        return legs, purpose_pairs, transaction
 
     def _create_from_wallet(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
         """O aluguel pago com a carteira: quatro pernas em dois livros
@@ -259,7 +266,31 @@ class InflowController(BaseController):
         if external is None or suspense is None:
             raise ClientBooksNotFound(client_key)
 
-        return external, suspense
+        # `D external / C suspense`, o par `CASH → UNALLOCATED` (G:118).
+        # Sem contrato, sem competência e sem pagador: o vazio da tabela.
+        amount_in_cents = payload["amount_in_cents"]
+        legs = [
+            (external, LedgerEntry.DEBIT, amount_in_cents),
+            (suspense, LedgerEntry.CREDIT, amount_in_cents),
+        ]
+        purpose_pairs = [(external, suspense)]
+        transaction = self._transaction(payload, "", "", "")
+
+        return legs, purpose_pairs, transaction
+
+    @staticmethod
+    def _transaction(payload: dict, contract_key: str, period_reference: str, payer_party_key: str) -> dict:
+        """As colunas de `ledger_transaction` que a entrada preenche, menos a
+        data-valor, que é lida depois das contas (RN-02)."""
+        return {
+            "ledger_transaction_type": LedgerTransactionType.INFLOW,
+            "contract_key": contract_key,
+            "period_reference": period_reference,
+            "payer_party_key": payer_party_key,
+            "end_to_end_id": payload["end_to_end_id"],
+            "actor": payload["actor"],
+            "reason": payload.get("reason"),
+        }
 
     def _value_date(self, payload: dict) -> datetime:
         """A data-valor do corpo, ou o agora quando ela não veio (CU-J10).

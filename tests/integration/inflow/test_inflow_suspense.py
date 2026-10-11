@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
@@ -14,7 +16,44 @@ def provision_contract() -> dict:
     return contract_ledger
 
 
+def collection_key(contract_ledger: dict) -> str:
+    collection = contract_ledger["accounts"][0]
+    assert collection["purpose_code"] == "COLLECTION"
+
+    return collection["ledger_account_key"]
+
+
+def balance(ledger_account_key: str) -> int:
+    status, ledger_account = RequestGenerator.GET_ledger_account(ledger_account_key)
+    assert status == 200, ledger_account
+
+    return ledger_account["balance_in_cents"]
+
+
+def book_balance(purpose_code: str) -> int:
+    """O saldo de um livro do cliente c1c1…, que é de todas as suítes:
+    quem o lê mede por diferença."""
+    return balance(ObjectGenerator.get_client_account_key(ALFA_CLIENT, purpose_code))
+
+
 class TestInflowSuspense:
+    def test_transfers_inflow_suspense_credits_suspense(self):
+        contract_ledger = provision_contract()
+        suspense_before = book_balance("UNALLOCATED")
+        external_before = book_balance("CASH")
+
+        status, response, payload = ObjectGenerator.create_suspense_inflow()
+
+        assert status == 201, response
+        assert str(UUID(response["ledger_transaction_key"])) == response["ledger_transaction_key"]
+        assert response["ledger_transaction_type"] == "inflow"
+        assert response["end_to_end_id"] == payload["end_to_end_id"]
+        for field in ["contract_key", "period_reference", "payer_party_key"]:
+            assert response[field] in ("", None), (field, response)
+        assert book_balance("UNALLOCATED") - suspense_before == 640000
+        assert book_balance("CASH") - external_before == 640000
+        assert balance(collection_key(contract_ledger)) == 0
+
     def test_transfers_inflow_suspense_unknown_client_returns_404(self):
         status, response, _payload = ObjectGenerator.create_suspense_inflow(UNKNOWN_CLIENT)
 
