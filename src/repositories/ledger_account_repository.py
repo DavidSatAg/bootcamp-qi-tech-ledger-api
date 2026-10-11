@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import case, func
+from sqlalchemy.orm import aliased
 
 from database import Context
 from models import (
@@ -12,6 +13,7 @@ from models import (
     LedgerEntry,
     PurposeCode,
 )
+from models import LedgerTransaction, LedgerTransactionType
 
 
 class LedgerAccountRepository:
@@ -166,3 +168,42 @@ class LedgerAccountRepository:
             )
             .first()
         )
+
+    def list_negative_without_reversal(self, client_key: str | None) -> list:
+        """As contas com saldo orientado negativo e nenhum lançamento em
+        transação `reversal`: [(LedgerAccount, saldo)], por `id` (D0005).
+        Negativo com estorno no histórico é esperado, não suspeito.
+        Com `client_key`, só o livro dele. Sem trava.
+        """
+        debit_minus_credit = case(
+            (LedgerEntry.direction == LedgerEntry.DEBIT, LedgerEntry.amount_in_cents),
+            else_=-LedgerEntry.amount_in_cents,
+        )
+        oriented = case((LedgerAccountType.side == LedgerAccountType.ASSET, debit_minus_credit), else_=-debit_minus_credit)
+        balance = func.sum(oriented)
+
+        reversal_entry = aliased(LedgerEntry)
+        has_reversal = (
+            self.session.query(reversal_entry.id)
+            .join(LedgerTransaction, reversal_entry.ledger_transaction_id == LedgerTransaction.id)
+            .join(LedgerTransactionType, LedgerTransaction.ledger_transaction_type_id == LedgerTransactionType.id)
+            .filter(
+                reversal_entry.ledger_account_id == LedgerAccount.id,
+                LedgerTransactionType.enumerator == LedgerTransactionType.REVERSAL,
+            )
+            .exists()
+        )
+
+        query = (
+            self.session.query(LedgerAccount, balance)
+            .join(LedgerEntry, LedgerEntry.ledger_account_id == LedgerAccount.id)
+            .join(LedgerAccountType, LedgerAccount.ledger_account_type_id == LedgerAccountType.id)
+            .filter(~has_reversal)
+        )
+
+        if client_key is not None:
+            query = query.filter(LedgerAccount.client_key == client_key)
+
+        rows = query.group_by(LedgerAccount.id).having(balance < 0).order_by(LedgerAccount.id).all()
+
+        return [(ledger_account, int(balance_in_cents)) for ledger_account, balance_in_cents in rows]

@@ -13,6 +13,7 @@ from resources import HealthCheckResource, SampleEntityResource
 from resources import LedgerAccountResource
 from resources import ContractLedgerResource
 from resources import TransferResource
+from resources import IntegrityResource
 from utils.logger import setup_logging
 
 
@@ -190,6 +191,13 @@ def create_app() -> FastAPI:
     application.add_api_route(
         "/transfers/{ledger_transaction_key}/trace",
         transfer_resource.on_get_trace,
+        methods=["GET"],
+    )
+
+    integrity_resource = IntegrityResource()
+    application.add_api_route(
+        "/integrity",
+        integrity_resource.on_get,
         methods=["GET"],
     )
 

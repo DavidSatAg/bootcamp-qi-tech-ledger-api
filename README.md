@@ -736,6 +736,16 @@ Pix chegando sob outra `Idempotency-Key` também responde `409 QIT001010`,
 e esse erro fica gravado sob a chave nova. Não é peça nova: é o mesmo
 código, com o significado estendido.
 
+### A lista de negativos suspeitos do `GET /integrity` só se prova vazia (fatia 06)
+
+O `GET /integrity` devolve, além dos totais, as contas com saldo negativo
+e nenhum lançamento em transação `reversal` (D0005): um negativo sem
+estorno no histórico só nasce de bug ou de SQL feito à mão (CU-H3). Nenhuma
+rota leva uma conta a esse estado, então nenhum teste por HTTP prova a
+lista cheia: a suíte prova só que ela sai vazia. O negativo **com** estorno,
+que não entra na lista, é o caso que a fatia 11 prova (CU-H2). Não é peça
+nova: é um limite declarado.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

@@ -2,6 +2,7 @@ from sqlalchemy import case, func
 
 from database import Context
 from models import LedgerAccount, LedgerEntry, LedgerTransaction
+from models import LedgerAccountType
 
 
 class LedgerEntryRepository:
@@ -57,3 +58,37 @@ class LedgerEntryRepository:
             .order_by(LedgerEntry.ledger_transaction_id, LedgerEntry.direction.desc(), LedgerEntry.id)
             .all()
         )
+
+    def sum_by_side(self, client_key: str | None) -> dict:
+        """O saldo orientado de cada lado, somado de todas as pernas:
+        {asset, liability, equity} em centavos inteiros. D - C no ativo,
+        C - D no passivo e no patrimônio. Com `client_key`, só o livro dele.
+
+        Um SELECT só: os três lados saem do mesmo retrato, e um commit
+        concorrente entra inteiro ou não entra. Sem trava.
+        """
+        debit_minus_credit = case(
+            (LedgerEntry.direction == LedgerEntry.DEBIT, LedgerEntry.amount_in_cents),
+            else_=-LedgerEntry.amount_in_cents,
+        )
+
+        def side_total(side: str, sign: int):
+            return func.coalesce(func.sum(case((LedgerAccountType.side == side, sign * debit_minus_credit), else_=0)), 0)
+
+        query = (
+            self.session.query(
+                side_total(LedgerAccountType.ASSET, 1),
+                side_total(LedgerAccountType.LIABILITY, -1),
+                side_total(LedgerAccountType.EQUITY, -1),
+            )
+            .select_from(LedgerEntry)
+            .join(LedgerAccount, LedgerEntry.ledger_account_id == LedgerAccount.id)
+            .join(LedgerAccountType, LedgerAccount.ledger_account_type_id == LedgerAccountType.id)
+        )
+
+        if client_key is not None:
+            query = query.filter(LedgerAccount.client_key == client_key)
+
+        asset, liability, equity = query.one()
+
+        return {"asset": int(asset), "liability": int(liability), "equity": int(equity)}

@@ -117,3 +117,11 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def GET_integrity(params: dict = None) -> BaseConnectorResponse:
+        response = ClientRequisition.send(
+            "GET", "/integrity", headers={"INTERNAL-TOKEN": INTERNAL_TOKEN}, query_params=params
+        )
+
+        return response.response_status, response.response_json

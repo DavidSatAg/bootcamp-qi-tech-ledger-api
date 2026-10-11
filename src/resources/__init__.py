@@ -3,3 +3,4 @@ from resources.sample_entity import SampleEntityResource
 from resources.ledger_account import LedgerAccountResource
 from resources.contract_ledger import ContractLedgerResource
 from resources.transfer import TransferResource
+from resources.integrity import IntegrityResource
