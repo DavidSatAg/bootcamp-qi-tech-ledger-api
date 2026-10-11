@@ -34,3 +34,130 @@ CREATE TABLE sample_entity_status_event(
     event_datetime                  TIMESTAMP NOT NULL,
     created_at                      TIMESTAMP NOT NULL DEFAULT(NOW())
 );
+
+-- ====================================================================
+-- LEDGER -- acrescentado pelo time. Nada acima desta linha mudou.
+-- ====================================================================
+
+-- --- Plano de contas ------------------------------------------------
+
+CREATE TABLE ledger_account_type(
+    id          SERIAL PRIMARY KEY,
+    enumerator  VARCHAR(50) NOT NULL,
+    -- asset: saldo = D - C. liability e equity: saldo = C - D
+    side        VARCHAR(10) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(enumerator),
+    CHECK (side IN ('asset', 'liability', 'equity'))
+);
+INSERT INTO ledger_account_type (enumerator, side) VALUES
+('external', 'asset'),       -- a conta real na instituicao
+('earmark',  'liability'),   -- dinheiro de terceiro com proposito
+('own',      'liability'),   -- recursos livres: taxa da imobiliaria; carteira
+('suspense', 'liability'),   -- entrou e nao se sabe de quem e
+('clearing', 'liability'),   -- saiu daqui, nao chegou la
+('revenue',  'equity');      -- receita da plataforma: e nossa
+
+CREATE TABLE ledger_account_status(
+    id          SERIAL PRIMARY KEY,
+    enumerator  VARCHAR(50) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(enumerator)
+);
+INSERT INTO ledger_account_status (enumerator) VALUES ('active'), ('blocked'), ('closed');
+
+CREATE TABLE purpose_code(
+    id          SERIAL PRIMARY KEY,
+    enumerator  VARCHAR(50) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(enumerator)
+);
+INSERT INTO purpose_code (enumerator) VALUES
+('CASH'), ('UNALLOCATED'), ('TRANSIT'), ('OWN'), ('PLATFORM_FEE'), ('WALLET'),
+('COLLECTION'), ('RENT'), ('IPTU'), ('CONDO'), ('WATER'), ('ELECTRICITY'), ('DEPOSIT');
+
+-- A REGRA QUE DEFINE O PRODUTO. Negacao por padrao. Estorno NAO consulta.
+-- As pernas external -> external de transferencia entre livros tambem nao.
+CREATE TABLE purpose_rule(
+    id                      SERIAL PRIMARY KEY,
+    source_purpose_code_id  INTEGER NOT NULL REFERENCES purpose_code(id),
+    target_purpose_code_id  INTEGER NOT NULL REFERENCES purpose_code(id),
+    -- origem e destino precisam ter o mesmo contract_key
+    requires_same_contract  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(source_purpose_code_id, target_purpose_code_id),
+    CHECK (source_purpose_code_id <> target_purpose_code_id)
+);
+INSERT INTO purpose_rule (source_purpose_code_id, target_purpose_code_id, requires_same_contract)
+SELECT o.id, d.id, r.same_contract
+FROM (VALUES
+    ('CASH','COLLECTION',FALSE), ('CASH','UNALLOCATED',FALSE), ('CASH','DEPOSIT',FALSE), ('CASH','WALLET',FALSE),
+    ('UNALLOCATED','COLLECTION',FALSE),
+    ('COLLECTION','RENT',TRUE), ('COLLECTION','IPTU',TRUE), ('COLLECTION','CONDO',TRUE),
+    ('COLLECTION','WATER',TRUE), ('COLLECTION','ELECTRICITY',TRUE), ('COLLECTION','OWN',FALSE),
+    ('OWN','PLATFORM_FEE',FALSE),      -- a imobiliaria paga a plataforma
+    ('PLATFORM_FEE','OWN',FALSE),      -- a plataforma devolve, se decidir
+    ('OWN','COLLECTION',FALSE),        -- absorcao de prejuizo
+    ('DEPOSIT','COLLECTION',TRUE),     -- caucao executada
+    ('WALLET','COLLECTION',FALSE),     -- pagar o aluguel com a carteira
+    ('RENT','TRANSIT',FALSE), ('IPTU','TRANSIT',FALSE), ('CONDO','TRANSIT',FALSE), ('WATER','TRANSIT',FALSE),
+    ('ELECTRICITY','TRANSIT',FALSE), ('OWN','TRANSIT',FALSE), ('PLATFORM_FEE','TRANSIT',FALSE),
+    ('DEPOSIT','TRANSIT',FALSE), ('WALLET','TRANSIT',FALSE),
+    ('RENT','WALLET',FALSE), ('IPTU','WALLET',FALSE), ('CONDO','WALLET',FALSE), ('WATER','WALLET',FALSE),
+    ('ELECTRICITY','WALLET',FALSE), ('OWN','WALLET',FALSE), ('PLATFORM_FEE','WALLET',FALSE), ('DEPOSIT','WALLET',FALSE),
+    ('TRANSIT','CASH',FALSE),
+    ('TRANSIT','RENT',FALSE), ('TRANSIT','IPTU',FALSE), ('TRANSIT','CONDO',FALSE), ('TRANSIT','WATER',FALSE),
+    ('TRANSIT','ELECTRICITY',FALSE), ('TRANSIT','OWN',FALSE), ('TRANSIT','PLATFORM_FEE',FALSE),
+    ('TRANSIT','DEPOSIT',FALSE), ('TRANSIT','WALLET',FALSE)
+) AS r(origem, destino, same_contract)
+JOIN purpose_code o ON o.enumerator = r.origem
+JOIN purpose_code d ON d.enumerator = r.destino;     -- 43 pares
+
+CREATE TABLE ledger_account(
+    id                       SERIAL PRIMARY KEY,
+    ledger_account_key       CHAR(36) NOT NULL,
+    client_key               CHAR(36) NOT NULL,          -- de quem sao os livros
+    contract_key             VARCHAR(36) NOT NULL DEFAULT '',
+    ledger_account_type_id   INTEGER NOT NULL REFERENCES ledger_account_type(id),
+    ledger_account_status_id INTEGER NOT NULL REFERENCES ledger_account_status(id),
+    purpose_code_id          INTEGER NOT NULL REFERENCES purpose_code(id),
+    -- dono economico e papel: copiados no provisionamento, NUNCA alterados
+    owner_party_key          VARCHAR(36) NOT NULL DEFAULT '',
+    owner_role               VARCHAR(20) NOT NULL DEFAULT '',
+    currency                 CHAR(3) NOT NULL DEFAULT 'BRL',
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(ledger_account_key),
+    UNIQUE(client_key, ledger_account_type_id, purpose_code_id, contract_key, owner_party_key),
+    CHECK (owner_role IN ('', 'landlord', 'administrator', 'platform', 'provider', 'holder')),
+    CHECK ((owner_party_key = '') = (owner_role = ''))
+);
+
+CREATE TABLE ledger_account_status_event(
+    id                  SERIAL PRIMARY KEY,
+    ledger_account_id   INTEGER NOT NULL REFERENCES ledger_account(id),
+    from_status_id      INTEGER REFERENCES ledger_account_status(id),
+    to_status_id        INTEGER NOT NULL REFERENCES ledger_account_status(id),
+    actor               VARCHAR(255) NOT NULL,
+    reason              VARCHAR(255),
+    trace_id            VARCHAR(64) NOT NULL,
+    event_datetime      TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT(NOW())
+);
+
+-- a copia imutavel de cada versao do split
+CREATE TABLE split_snapshot(
+    id                       SERIAL PRIMARY KEY,
+    contract_key             VARCHAR(36) NOT NULL,
+    split_version            INTEGER NOT NULL,
+    -- de onde sai: COLLECTION nos itens; OWN na taxa da plataforma
+    source_ledger_account_id INTEGER NOT NULL REFERENCES ledger_account(id),
+    ledger_account_id        INTEGER NOT NULL REFERENCES ledger_account(id),
+    allocation_type          VARCHAR(20) NOT NULL,
+    percentage               NUMERIC(7,4),
+    amount_in_cents          NUMERIC(20,0),
+    rent_amount_in_cents     NUMERIC(20,0) NOT NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(contract_key, split_version, ledger_account_id),
+    CHECK (allocation_type IN ('percentage', 'fixed', 'remainder'))
+);
+
