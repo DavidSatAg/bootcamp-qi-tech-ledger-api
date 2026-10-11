@@ -1,5 +1,6 @@
 from datetime import timezone
 
+from dtos.ledger_account_dto import empty_as_null
 from models import LedgerTransaction
 
 
@@ -18,7 +19,8 @@ class LedgerTransactionDTO:
         dto["ledger_transaction_type"] = ledger_transaction.ledger_transaction_type.enumerator
         dto["contract_key"] = ledger_transaction.contract_key
         dto["period_reference"] = ledger_transaction.period_reference
-        dto["payer_party_key"] = ledger_transaction.payer_party_key
+        dto["split_version"] = ledger_transaction.split_version
+        dto["payer_party_key"] = empty_as_null(ledger_transaction.payer_party_key)
         dto["end_to_end_id"] = ledger_transaction.end_to_end_id
         dto["value_date"] = utc_with_z(ledger_transaction.value_date)
 
