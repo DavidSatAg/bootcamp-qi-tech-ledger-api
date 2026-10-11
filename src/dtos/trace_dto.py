@@ -1,6 +1,6 @@
 from dtos.ledger_account_dto import empty_as_null
 from dtos.ledger_transaction_dto import utc_with_z
-from models import LedgerAccount, LedgerEntry, LedgerTransaction
+from models import LedgerAccount, LedgerEntry, LedgerTransaction, Outbox
 
 
 class TraceDTO:
@@ -9,12 +9,31 @@ class TraceDTO:
 
     @staticmethod
     def obj_to_dict(ledger_transaction: LedgerTransaction, reverses_key: str | None, entries: list, chain: list) -> dict:
-        """`entries` = [(LedgerEntry, LedgerAccount)]; `chain` = a lista já
-        traduzida da cadeia."""
+        """`entries` = [(LedgerEntry, LedgerAccount)] da transação pedida;
+        `chain` = [(LedgerTransaction, chave da estornada, Outbox ou None,
+        [(LedgerEntry, LedgerAccount)])], na ordem da cadeia."""
         dto = dict()
         dto["transaction"] = TraceDTO.transaction_to_dict(ledger_transaction, reverses_key)
         dto["entries"] = TraceDTO.entries_to_list_dict(entries)
-        dto["chain"] = chain
+        dto["chain"] = [TraceDTO.link_to_dict(*link) for link in chain]
+
+        return dto
+
+    @staticmethod
+    def link_to_dict(ledger_transaction: LedgerTransaction, reverses_key: str | None, outbox: Outbox | None, entries: list) -> dict:
+        """Um elo da cadeia: a transação, o repasse dela, se houver, e as pernas."""
+        dto = dict()
+        dto["ledger_transaction_key"] = ledger_transaction.ledger_transaction_key
+        dto["ledger_transaction_type"] = ledger_transaction.ledger_transaction_type.enumerator
+        dto["value_date"] = utc_with_z(ledger_transaction.value_date)
+        dto["payer_party_key"] = empty_as_null(ledger_transaction.payer_party_key)
+        dto["reverses_transaction_key"] = reverses_key
+        dto["outbox_key"] = None
+        dto["outbox_status"] = None
+        if outbox is not None:
+            dto["outbox_key"] = outbox.outbox_key
+            dto["outbox_status"] = outbox.outbox_status.enumerator
+        dto["entries"] = TraceDTO.entries_to_list_dict(entries)
 
         return dto
 

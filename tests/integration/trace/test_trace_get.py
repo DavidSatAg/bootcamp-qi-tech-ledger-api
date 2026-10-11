@@ -54,6 +54,49 @@ class TestTraceGet:
             assert entry["owner_party_key"] is None
             assert entry["owner_role"] is None
 
+    def test_transfers_trace_chain_same_contract_and_period(self):
+        contract_key, _collection_key = provision_contract()
+        status, inflow_a, _payload = ObjectGenerator.create_inflow(
+            contract_key, amount_in_cents=320000, value_date="2026-09-05T14:23:00Z"
+        )
+        assert status == 201, inflow_a
+        status, inflow_b, _payload = ObjectGenerator.create_inflow(
+            contract_key, amount_in_cents=320000, value_date="2026-09-05T14:22:00Z"
+        )
+        assert status == 201, inflow_b
+        status, inflow_c, _payload = ObjectGenerator.create_inflow(contract_key, period_reference="2026-10")
+        assert status == 201, inflow_c
+        key_a = inflow_a["ledger_transaction_key"]
+        key_b = inflow_b["ledger_transaction_key"]
+        key_c = inflow_c["ledger_transaction_key"]
+
+        status, trace_a = RequestGenerator.GET_transfer_trace(key_a)
+
+        assert status == 200, trace_a
+        chain = trace_a["chain"]
+        assert [link["ledger_transaction_key"] for link in chain] == [key_b, key_a]
+        assert chain[0]["value_date"] == "2026-09-05T14:22:00Z"
+        assert chain[1]["value_date"] == "2026-09-05T14:23:00Z"
+        for link in chain:
+            assert link["ledger_transaction_type"] == "inflow"
+            assert link["payer_party_key"] == BRUNO
+            assert link["reverses_transaction_key"] is None
+            assert link["outbox_key"] is None
+            assert link["outbox_status"] is None
+            assert [entry["direction"] for entry in link["entries"]] == ["D", "C"]
+            assert [entry["amount_in_cents"] for entry in link["entries"]] == [320000, 320000]
+
+        status, trace_b = RequestGenerator.GET_transfer_trace(key_b)
+
+        assert status == 200, trace_b
+        assert trace_b["chain"] == chain
+
+        status, trace_c = RequestGenerator.GET_transfer_trace(key_c)
+
+        assert status == 200, trace_c
+        assert [link["ledger_transaction_key"] for link in trace_c["chain"]] == [key_c]
+        assert len(trace_c["chain"][0]["entries"]) == 2
+
     def test_transfers_trace_unknown_returns_404(self):
         unknown_key = str(uuid4())
 

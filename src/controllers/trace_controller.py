@@ -25,6 +25,28 @@ class TraceController(BaseController):
         if ledger_transaction.reverses_transaction_id is not None:
             reverses_key = self.ledger_transaction_repository.get_key_by_id(ledger_transaction.reverses_transaction_id)
 
-        entries = self.ledger_entry_repository.list_by_transactions([ledger_transaction.id])
+        chain = self.ledger_transaction_repository.list_chain(
+            ledger_transaction.contract_key, ledger_transaction.period_reference
+        )
 
-        return TraceDTO.obj_to_dict(ledger_transaction, reverses_key, entries, [])
+        # As pernas da transação pedida e as da cadeia saem de uma consulta só.
+        ledger_transaction_ids = [ledger_transaction.id]
+        for chain_transaction, _reverses_key, _outbox in chain:
+            if chain_transaction.id not in ledger_transaction_ids:
+                ledger_transaction_ids.append(chain_transaction.id)
+
+        entries_by_transaction = {ledger_transaction_id: [] for ledger_transaction_id in ledger_transaction_ids}
+        for ledger_entry, ledger_account in self.ledger_entry_repository.list_by_transactions(ledger_transaction_ids):
+            entries_by_transaction[ledger_entry.ledger_transaction_id].append((ledger_entry, ledger_account))
+
+        chain_with_entries = [
+            (chain_transaction, chain_reverses_key, outbox, entries_by_transaction[chain_transaction.id])
+            for chain_transaction, chain_reverses_key, outbox in chain
+        ]
+
+        return TraceDTO.obj_to_dict(
+            ledger_transaction,
+            reverses_key,
+            entries_by_transaction[ledger_transaction.id],
+            chain_with_entries,
+        )

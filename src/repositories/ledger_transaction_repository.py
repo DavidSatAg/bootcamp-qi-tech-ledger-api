@@ -1,7 +1,10 @@
 from uuid import uuid4
 
+from sqlalchemy.orm import aliased
+
 from database import Context
 from models import LedgerTransaction, LedgerTransactionType
+from models import Outbox
 
 
 class LedgerTransactionRepository:
@@ -51,4 +54,28 @@ class LedgerTransactionRepository:
             self.session.query(LedgerTransaction.ledger_transaction_key)
             .filter(LedgerTransaction.id == ledger_transaction_id)
             .scalar()
+        )
+
+    def list_chain(self, contract_key: str, period_reference: str) -> list:
+        """As transações do contrato na competência, em `value_date` e `id`:
+        [(LedgerTransaction, chave da estornada ou None, Outbox ou None)].
+
+        Transação sem contrato não tem cadeia. Supõe uma outbox por
+        transação de repasse: duas linhas repetiriam a transação.
+        """
+        if contract_key == "":
+            return []
+
+        reversed_transaction = aliased(LedgerTransaction)
+
+        return (
+            self.session.query(LedgerTransaction, reversed_transaction.ledger_transaction_key, Outbox)
+            .outerjoin(reversed_transaction, LedgerTransaction.reverses_transaction_id == reversed_transaction.id)
+            .outerjoin(Outbox, Outbox.ledger_transaction_id == LedgerTransaction.id)
+            .filter(
+                LedgerTransaction.contract_key == contract_key,
+                LedgerTransaction.period_reference == period_reference,
+            )
+            .order_by(LedgerTransaction.value_date, LedgerTransaction.id)
+            .all()
         )
