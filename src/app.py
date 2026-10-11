@@ -10,6 +10,7 @@ from middlewares import (
     register_session_manager_middleware,
 )
 from resources import HealthCheckResource, SampleEntityResource
+from resources import LedgerAccountResource
 from utils.logger import setup_logging
 
 
@@ -155,6 +156,13 @@ def create_app() -> FastAPI:
     application.add_api_route(
         "/sample_entities",
         sample_entity_resource.on_get_list,
+        methods=["GET"],
+    )
+
+    ledger_account_resource = LedgerAccountResource()
+    application.add_api_route(
+        "/ledger_accounts/{ledger_account_key}",
+        ledger_account_resource.on_get_by_key,
         methods=["GET"],
     )
 

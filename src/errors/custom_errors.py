@@ -99,3 +99,14 @@ class InvalidBirthdate(QIException):
         description = f"The birthdate {birthdate} is not a real date."
         translation = "A data de nascimento informada não existe."
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class LedgerAccountNotFound(QIException):
+    code = "QIT001018"
+
+    def __init__(self, ledger_account_key) -> None:
+        title = "Ledger Account not Found"
+        http_status = 404
+        description = f"Ledger account with key {ledger_account_key} was not found."
+        translation = "conta inexistente"
+        super().__init__(title, self.code, http_status, description, translation)
