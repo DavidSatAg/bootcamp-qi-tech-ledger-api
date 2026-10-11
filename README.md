@@ -758,6 +758,19 @@ nova: é um limite declarado.
    executa SQL livre, não lê dado para asserção, não monta cenário — o
    cenário nasce por `POST`.
 
+### Os connectors do Cadastro e do provedor (`PartyConnector`, `ProviderConnector`, fatia 09)
+
+1. *Princípio da base tocado:* a base só tem o `bankslip_connector`, fora
+   de qualquer fluxo.
+2. *Por que não funciona sem:* o Ledger não guarda chave Pix — ela vem do
+   Cadastro a cada repasse — e o Pix só sai pelo provedor.
+3. *A peça, e por que é a menor:* duas subclasses de `RestConnector`, um
+   método cada, com timeout vindo do ambiente: o padrão que a base já
+   ensina.
+4. *O que ela não faz:* transforma só a falha de rede em `None`; não
+   interpreta status, não tenta de novo, não guarda chave, não abre
+   transação.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

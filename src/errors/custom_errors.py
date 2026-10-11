@@ -318,3 +318,36 @@ class StatementPeriodAlreadyIssued(QIException):
             )
         translation = "período já tem extrato"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class OwnerNotActive(QIException):
+    code = "QIT001038"
+
+    def __init__(self) -> None:
+        title = "Owner not active"
+        http_status = 409
+        description = "The owner of the source account is not active in the party registry."
+        translation = "dono não está ativo no cadastro"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class OwnerWithoutPixKey(QIException):
+    code = "QIT001039"
+
+    def __init__(self) -> None:
+        title = "Owner without pix key"
+        http_status = 422
+        description = "The owner of the source account has no pix key in the party registry."
+        translation = "dono sem chave Pix"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class PartyServiceUnavailable(QIException):
+    code = "QIT001040"
+
+    def __init__(self) -> None:
+        title = "Party service unavailable"
+        http_status = 503
+        description = "The party registry did not answer; nothing was recorded, and it is safe to retry."
+        translation = "cadastro indisponível"
+        super().__init__(title, self.code, http_status, description, translation)
