@@ -322,3 +322,18 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_outbox_dispatch(payload: dict = None) -> BaseConnectorResponse:
+        """A varredura da fila da outbox. Sem corpo, vai `{}`."""
+        if payload is None:
+            payload = {}
+
+        response = ClientRequisition.send(
+            "POST",
+            "/outbox/dispatch",
+            payload=payload,
+            headers={"INTERNAL-TOKEN": INTERNAL_TOKEN},
+        )
+
+        return response.response_status, response.response_json

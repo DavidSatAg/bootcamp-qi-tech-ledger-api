@@ -16,6 +16,7 @@ from resources import TransferResource
 from resources import IntegrityResource
 from resources import StatementResource
 from resources import WebhookResource
+from resources import OutboxResource
 from resources import WalletResource
 from utils.logger import setup_logging
 
@@ -260,6 +261,13 @@ def create_app() -> FastAPI:
     application.add_api_route(
         "/webhooks/provider",
         webhook_resource.on_post_provider,
+        methods=["POST"],
+    )
+
+    outbox_resource = OutboxResource()
+    application.add_api_route(
+        "/outbox/dispatch",
+        outbox_resource.on_post_dispatch,
         methods=["POST"],
     )
 

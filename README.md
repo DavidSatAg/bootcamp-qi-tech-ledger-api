@@ -816,6 +816,26 @@ estorná-la inteira e alocar de novo (D0005). O `400` é um compromisso: o
 correto seria um `422`, mas nenhum código do guia cabe, e nenhuma fatia
 inventa código. Não é peça nova: é um limite declarado.
 
+### A fila da outbox (`POST /outbox/dispatch`, fatia 14)
+
+1. *Princípio da base tocado:* a base faz um commit, na última linha do
+   controller.
+2. *Por que não funciona sem:* o repasse que ficou `pending` por queda ou
+   por falha do Cadastro ou do provedor nunca sairia da outbox (D0006;
+   CU-E3).
+3. *A peça, e por que é a menor:* uma tentativa por linha `pending`, até o
+   `limit`, com a mesma `dispatch_idempotency_key`: dois commits por
+   tentativa (a reivindicação, que leva a linha a `in_flight`, e o
+   desfecho), e o que fecha a leitura da fila; a linha travada por outro é
+   pulada; `dead` ao esgotar o `OUTBOX_MAX_ATTEMPTS`.
+4. *O que ela não faz:* não tem backoff nem relógio, não estorna o `dead`
+   (o operador estorna o repasse pela rota de estorno), não tira linha de
+   `in_flight` e não segura trava durante a chamada de rede.
+
+O despacho inline do repasse passa pela mesma reivindicação: se a fila já
+tem a linha, o `POST /transfers/payout` responde com a outbox no estado em
+que ela está, sem despachar de novo.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

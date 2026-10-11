@@ -108,3 +108,39 @@ class OutboxRepository:
 
         self.session.add(status_event)
         self.session.flush()
+
+    def claim_pending(self, outbox_id: int) -> Outbox | None:
+        """Reivindica a outbox para uma tentativa (fatia 14, RN-06): a linha,
+        travada até o fim da transação e relida do banco, se ainda está em
+        `pending`; senão, None.
+
+        A espera vai até o `lock_timeout`, com o `set_config(..., true)` do
+        `get_by_key_for_update`; estourar sobe como está (`55P03`).
+        """
+        pending_status = self.get_status(OutboxStatus.PENDING)
+
+        self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
+
+        return (
+            self.session.query(Outbox)
+            .filter(Outbox.id == outbox_id, Outbox.outbox_status_id == pending_status.id)
+            .with_for_update(of=Outbox)
+            .populate_existing()
+            .first()
+        )
+
+    def list_pending_ids(self, limit: int) -> list:
+        """Os `id`s das outbox em `pending`, os mais antigos primeiro, até
+        `limit` (fatia 14, RN-09; índice `outbox_by_status`). Sem trava: a
+        reivindicação é por linha."""
+        pending_status = self.get_status(OutboxStatus.PENDING)
+
+        rows = (
+            self.session.query(Outbox.id)
+            .filter(Outbox.outbox_status_id == pending_status.id)
+            .order_by(Outbox.id)
+            .limit(limit)
+            .all()
+        )
+
+        return [outbox_id for (outbox_id,) in rows]

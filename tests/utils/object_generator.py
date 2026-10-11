@@ -279,3 +279,23 @@ class ObjectGenerator:
         )
 
         return status, response, deposit_payload
+
+    @staticmethod
+    def create_pending_payout(idempotency_key: str) -> tuple:
+        """O contrato dividido com a RENT do `ffff…` (Pix com erro no
+        provedor) e o repasse dos 450000 dela com a chave pedida: a outbox
+        fica `pending`, com uma tentativa (S09 CA-11). Devolve (corpo do 202,
+        payload)."""
+        contract_ledger = ObjectGenerator.create_divided_contract("ffffffff-ffff-4fff-8fff-ffffffffffff")
+
+        rent_account_key = None
+        for account in contract_ledger["accounts"]:
+            if account["purpose_code"] == "RENT":
+                rent_account_key = account["ledger_account_key"]
+
+        status, payout, payload = ObjectGenerator.create_payout(rent_account_key, idempotency_key=idempotency_key)
+        assert status == 202, payout
+        assert payout["outbox"]["outbox_status"] == "pending", payout
+        assert payout["outbox"]["attempt_count"] == 1, payout
+
+        return payout, payload
