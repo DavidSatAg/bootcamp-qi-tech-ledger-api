@@ -1,4 +1,5 @@
 from threading import Barrier, Thread
+from uuid import uuid4
 
 from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
 
@@ -112,6 +113,55 @@ class TestWebhookConcurrency:
             assert outbox_status == "failed", chain
             assert outcomes == ["dispatch_return"], chain
             assert moved(before, contract_ledger) == {"CLR": -450000, "CASH": 0, "RENT": 450000}
+        status, integrity = RequestGenerator.GET_integrity({"client_key": ALFA_CLIENT})
+        assert status == 200, integrity
+        assert integrity["difference_in_cents"] == 0
+
+    def test_webhooks_provider_failed_vs_payout_no_deadlock_500(self):
+        """A falha do 1º repasse trava a `clearing` e credita a RENT; um
+        repasse novo da mesma RENT trava a RENT e credita a `clearing`: o
+        ciclo declarado (§6). O Postgres aborta um com `40P01`, que sai 011,
+        e o perdedor repetido passa."""
+        contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
+        contract_key = contract_ledger["contract_key"]
+        status, response, _payload = ObjectGenerator.create_inflow(contract_key, period_reference="2026-10")
+        assert status == 201, response
+        status, response, _payload = ObjectGenerator.create_split(contract_key, period_reference="2026-10")
+        assert status == 201, response
+        before = balances(contract_ledger)
+        assert before["RENT"] == 450000
+        failure = webhook_payload(payout["outbox"], "settlement_failed")
+        new_payout = PayloadGenerator.create_payout_payload(rent_key(contract_ledger), period_reference="2026-10")
+        barrier = Barrier(2)
+        results = dict()
+
+        def send_failure() -> None:
+            barrier.wait()
+            results["webhook"] = RequestGenerator.POST_webhooks_provider(failure)
+
+        def send_payout() -> None:
+            barrier.wait()
+            results["payout"] = RequestGenerator.POST_transfers_payout(new_payout, idempotency_key=str(uuid4()))
+
+        threads = [Thread(target=send_failure), Thread(target=send_payout)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        for name, (status, response) in results.items():
+            assert status in (202, 204) or (status == 409 and response["code"] == "QIT001011"), (name, results)
+
+        if results["webhook"][0] == 409:
+            results["webhook"] = RequestGenerator.POST_webhooks_provider(failure)
+        if results["payout"][0] == 409:
+            results["payout"] = RequestGenerator.POST_transfers_payout(new_payout, idempotency_key=str(uuid4()))
+
+        assert (results["webhook"][0], results["payout"][0]) == (204, 202), results
+        assert moved(before, contract_ledger) == {"CLR": 0, "CASH": 0, "RENT": 0}
+        assert [link["outbox_status"] for link in chain_of(payout) if link["outbox_key"] == payout["outbox"]["outbox_key"]] == [
+            "failed"
+        ]
         status, integrity = RequestGenerator.GET_integrity({"client_key": ALFA_CLIENT})
         assert status == 200, integrity
         assert integrity["difference_in_cents"] == 0

@@ -40,6 +40,10 @@ END_TO_END_ID_CONSTRAINT = "ledger_transaction_end_to_end_id_key"
 # do lock_timeout.
 LOCK_NOT_AVAILABLE = "55P03"
 
+# O SQLSTATE do Postgres para "deadlock_detected": duas transações se
+# esperavam, e esta foi a abortada (fatia 10, §6).
+DEADLOCK_DETECTED = "40P01"
+
 
 class PostingController(BaseController):
     """O motor de postagem: o único caminho por onde o dinheiro se move
@@ -170,6 +174,11 @@ class PostingController(BaseController):
         o imprevisto, logado e trocado pelo InternalError."""
         if isinstance(error, QIException):
             return error
+
+        # O deadlock é contenção, como o 55P03: o Postgres desfez esta
+        # transação, e a repetição passa. Sai 011, não 500 (fatia 10, RN-08).
+        if isinstance(error, OperationalError) and getattr(error.orig, "pgcode", None) == DEADLOCK_DETECTED:
+            return LockTimeout()
 
         self.logger.exception("Erro inesperado no motor de postagem")
         return InternalError()
