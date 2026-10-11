@@ -249,3 +249,23 @@ class RequestGenerator:
             logged_requests.append((headers, body))
 
         return logged_requests
+
+    @staticmethod
+    def POST_webhooks_provider(payload: dict = None, raw_body: bytes = None) -> BaseConnectorResponse:
+        """O aviso do provedor. Sem `Idempotency-Key`: a chave é o
+        `provider_reference` (RFC :154). `raw_body` manda os bytes exatos,
+        como no `POST_transfers_inflow`; o 204 volta com `json` None."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if raw_body is not None:
+            headers["Content-Type"] = "application/json"
+
+        response = ClientRequisition.send(
+            "POST",
+            "/webhooks/provider",
+            payload=payload,
+            headers=headers,
+            data=raw_body,
+        )
+
+        return response.response_status, response.response_json

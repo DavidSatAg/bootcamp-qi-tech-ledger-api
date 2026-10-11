@@ -362,3 +362,16 @@ class CrossesClientBooks(QIException):
         description = "The internal transfer would move money between the books of different clients."
         translation = "atravessaria livros de clientes (rota internal)"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class OutboxNotFound(QIException):
+    code = "QIT001031"
+
+    def __init__(self, outbox_key=None) -> None:
+        title = "Outbox not found"
+        http_status = 404
+        description = "The outbox was not found."
+        if outbox_key is not None:
+            description = f"Outbox with key {outbox_key} was not found."
+        translation = "outbox inexistente"
+        super().__init__(title, self.code, http_status, description, translation)

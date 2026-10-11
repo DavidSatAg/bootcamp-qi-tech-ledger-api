@@ -261,3 +261,19 @@ class PayloadGenerator:
             payload["value_date"] = value_date
 
         return payload
+
+    @staticmethod
+    def create_webhook_payload(
+        outbox_key: str,
+        provider_reference: str,
+        event_type: str = "settlement_confirmed",
+        value_date: str = "2026-09-06T10:00:00Z",
+    ) -> dict:
+        """O aviso do provedor sobre um repasse (01b :367-374): a liquidação
+        confirmada, por padrão, com a data-valor do exemplo do 01b."""
+        return {
+            "provider_reference": provider_reference,
+            "event_type": event_type,
+            "outbox_key": outbox_key,
+            "value_date": value_date,
+        }

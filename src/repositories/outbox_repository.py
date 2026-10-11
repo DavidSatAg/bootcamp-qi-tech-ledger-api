@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import func, select
+
+from constants import LOCK_TIMEOUT
 from database import Context
 from models import LedgerTransaction, Outbox, OutboxStatus, OutboxStatusEvent
 
@@ -67,6 +70,24 @@ class OutboxRepository:
 
     def get_by_id(self, outbox_id: int) -> Outbox:
         return self.session.query(Outbox).filter(Outbox.id == outbox_id).first()
+
+    def get_by_key_for_update(self, outbox_key: str) -> Outbox:
+        """A outbox da chave, travada até o fim da transação, ou None (fatia
+        10, RN-02): dois avisos da mesma outbox passam um de cada vez.
+
+        A espera vai até o `lock_timeout`, com o `set_config(..., true)` do
+        `lock_contract_accounts`; estourar sobe como está (`55P03`), e quem o
+        traduz é o controller.
+        """
+        self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
+
+        return (
+            self.session.query(Outbox)
+            .filter(Outbox.outbox_key == outbox_key)
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
 
     def get_by_transaction(self, ledger_transaction_id: int) -> Outbox:
         """A outbox do repasse: uma por transação (INV-02)."""

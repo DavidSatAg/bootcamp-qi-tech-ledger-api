@@ -15,6 +15,7 @@ from resources import ContractLedgerResource
 from resources import TransferResource
 from resources import IntegrityResource
 from resources import StatementResource
+from resources import WebhookResource
 from utils.logger import setup_logging
 
 
@@ -237,6 +238,13 @@ def create_app() -> FastAPI:
         "/statement/{statement_key}",
         statement_resource.on_get_by_key,
         methods=["GET"],
+    )
+
+    webhook_resource = WebhookResource()
+    application.add_api_route(
+        "/webhooks/provider",
+        webhook_resource.on_post_provider,
+        methods=["POST"],
     )
 
     register_error_handlers(application)

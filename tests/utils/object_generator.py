@@ -149,3 +149,38 @@ class ObjectGenerator:
         status, response = RequestGenerator.POST_transfers_internal(internal_payload, idempotency_key=idempotency_key)
 
         return status, response, internal_payload
+
+    @staticmethod
+    def create_paid_out_contract(rent_beneficiary_party_key: str = "22222222-2222-4222-8222-222222222222") -> tuple:
+        """O contrato dividido e o repasse dos 450000 da RENT (05:183).
+        Devolve (corpo do provisionamento, corpo do 202 do repasse)."""
+        contract_ledger = ObjectGenerator.create_divided_contract(rent_beneficiary_party_key)
+
+        rent_account_key = None
+        for account in contract_ledger["accounts"]:
+            if account["purpose_code"] == "RENT":
+                rent_account_key = account["ledger_account_key"]
+
+        status, payout, _payload = ObjectGenerator.create_payout(rent_account_key)
+        assert status == 202, payout
+
+        return contract_ledger, payout
+
+    @staticmethod
+    def create_settlement(outbox: dict, event_type: str = "settlement_confirmed", **kwargs) -> tuple:
+        """O aviso do provedor sobre a outbox do repasse, com a referência
+        que o provedor daria: "PRV-" + chave de despacho + "-SETTLED" (ou
+        "-FAILED" na falha). Devolve (status, corpo, payload) sem conferir."""
+        suffix = "-SETTLED"
+        if event_type == "settlement_failed":
+            suffix = "-FAILED"
+
+        provider_reference = kwargs.pop(
+            "provider_reference", "PRV-" + outbox["dispatch_idempotency_key"] + suffix
+        )
+        webhook_payload = PayloadGenerator.create_webhook_payload(
+            outbox["outbox_key"], provider_reference, event_type=event_type, **kwargs
+        )
+        status, response = RequestGenerator.POST_webhooks_provider(webhook_payload)
+
+        return status, response, webhook_payload

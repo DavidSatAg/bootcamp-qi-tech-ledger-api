@@ -1,0 +1,30 @@
+{
+  "title": "PostWebhooksProvider",
+  "type": "object",
+  "properties": {
+    "provider_reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["settlement_confirmed", "settlement_failed"]
+    },
+    "outbox_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "value_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    }
+  },
+  "required": [
+    "provider_reference",
+    "event_type",
+    "outbox_key",
+    "value_date"
+  ],
+  "additionalProperties": false
+}
