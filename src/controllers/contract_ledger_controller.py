@@ -5,9 +5,16 @@ from sqlalchemy.exc import IntegrityError
 from constants import PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
 from dtos import ContractLedgerDTO
-from errors import SplitVersionConflict, SplitVersionOutOfSequence
+from errors import (
+    InvalidSchema,
+    PurposePairNotAllowed,
+    SplitDoesNotClose,
+    SplitVersionConflict,
+    SplitVersionOutOfSequence,
+    UnknownPurposeCode,
+)
 from models import LedgerAccount, LedgerAccountType, PurposeCode, SplitSnapshot
-from repositories import LedgerAccountRepository, SplitSnapshotRepository
+from repositories import LedgerAccountRepository, PurposeRuleRepository, SplitSnapshotRepository
 from utils.request_context import get_request_id
 
 # Os cinco livros do cliente: (tipo, propósito, papel do dono). O dono
@@ -22,6 +29,7 @@ CLIENT_BOOKS = [
 ]
 
 FOUR_PLACES = Decimal("0.0001")
+HUNDRED_PERCENT = Decimal(100)
 
 
 def four_places(percentage) -> str:
@@ -48,6 +56,7 @@ class ContractLedgerController(BaseController):
         super().__init__(__name__)
         self.ledger_account_repository = LedgerAccountRepository(self.context)
         self.split_snapshot_repository = SplitSnapshotRepository(self.context)
+        self.purpose_rule_repository = PurposeRuleRepository(self.context)
 
     def provision(self, payload: dict) -> tuple:
         """Abre o que falta e devolve (corpo, criou?).
@@ -74,6 +83,8 @@ class ContractLedgerController(BaseController):
         A versão pedida decide o caminho (RN-05): uma versão que já existe
         é replay ou conflito, e nada se grava; só a próxima cria.
         """
+        self._check_split(payload)
+
         contract_key = payload["contract_key"]
         split_version = payload["split_version"]
         latest_split_version = self.split_snapshot_repository.get_max_version(contract_key)
@@ -106,6 +117,52 @@ class ContractLedgerController(BaseController):
         self.session.commit()
 
         return contract_ledger_dto, True
+
+    def _check_split(self, payload: dict) -> None:
+        """As conferências que vêm antes de qualquer escrita, nesta ordem
+        (RN-02): item repetido, propósito desconhecido, par proibido e
+        split que não fecha. Recusa aqui não grava nada.
+
+        O propósito desconhecido vem antes do par: sem o código, não há
+        par a consultar.
+        """
+        seen_items = set()
+        for item in payload["items"]:
+            item_key = (item["purpose_code"], item["beneficiary_party_key"])
+            if item_key in seen_items:
+                # Colidiriam na mesma linha do split_snapshot: é pedido
+                # malformado, e por isso 400, como o schema.
+                raise InvalidSchema(
+                    f"items has {item['purpose_code']} for {item['beneficiary_party_key']} more than once"
+                )
+            seen_items.add(item_key)
+
+        for item in payload["items"]:
+            if self.ledger_account_repository.get_purpose_code(item["purpose_code"]) is None:
+                raise UnknownPurposeCode(item["purpose_code"])
+
+        pairs = [(PurposeCode.COLLECTION, item["purpose_code"]) for item in payload["items"]]
+        pairs.append((PurposeCode.OWN, PurposeCode.PLATFORM_FEE))
+        for source_purpose_code, target_purpose_code in pairs:
+            if not self.purpose_rule_repository.exists_pair(source_purpose_code, target_purpose_code):
+                raise PurposePairNotAllowed(source_purpose_code, target_purpose_code)
+
+        percentage_sum = Decimal(0)
+        administration_fee = Decimal(0)
+        for item in payload["items"]:
+            if item["type"] == SplitSnapshot.PERCENTAGE:
+                percentage_sum = percentage_sum + Decimal(item["value"])
+                if item["purpose_code"] == PurposeCode.OWN:
+                    administration_fee = administration_fee + Decimal(item["value"])
+
+        if percentage_sum >= HUNDRED_PERCENT:
+            raise SplitDoesNotClose(f"the percentages add up to {percentage_sum}%")
+
+        platform_fee_percentage = Decimal(payload["platform_fee_percentage"])
+        if platform_fee_percentage > administration_fee:
+            raise SplitDoesNotClose(
+                f"the platform fee {platform_fee_percentage}% is above the administration fee {administration_fee}%"
+            )
 
     def _replay(self, payload: dict, latest_split_version: int) -> dict:
         """A versão já existe: mesmo conteúdo devolve as contas dela; outro

@@ -135,3 +135,36 @@ class SplitVersionOutOfSequence(QIException):
         )
         translation = "versão de split fora de sequência"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class PurposePairNotAllowed(QIException):
+    code = "QIT001008"
+
+    def __init__(self, source_purpose_code, target_purpose_code) -> None:
+        title = "Purpose pair not allowed"
+        http_status = 422
+        description = f"Purpose pair {source_purpose_code} -> {target_purpose_code} is not in purpose_rule."
+        translation = "par de propósitos proibido / contratos diferentes"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class UnknownPurposeCode(QIException):
+    code = "QIT001028"
+
+    def __init__(self, purpose_code) -> None:
+        title = "Unknown purpose code"
+        http_status = 422
+        description = f"The purpose code {purpose_code} does not exist."
+        translation = "propósito inexistente"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class SplitDoesNotClose(QIException):
+    code = "QIT001034"
+
+    def __init__(self, reason) -> None:
+        title = "Split does not close"
+        http_status = 422
+        description = f"The split does not close: {reason}."
+        translation = "split não fecha: percentuais ≥ 100%, ou taxa da plataforma > taxa de administração"
+        super().__init__(title, self.code, http_status, description, translation)

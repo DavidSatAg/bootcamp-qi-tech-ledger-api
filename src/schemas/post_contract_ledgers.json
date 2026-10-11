@@ -123,11 +123,28 @@
                 "required": [
                   "value"
                 ]
+              },
+              "properties": {
+                "beneficiary_role": {
+                  "const": "landlord"
+                }
               }
             }
           }
         ]
-      }
+      },
+      "contains": {
+        "properties": {
+          "type": {
+            "const": "remainder"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "minContains": 1,
+      "maxContains": 1
     },
     "actor": {
       "type": "string",
