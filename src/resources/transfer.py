@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from controllers import InflowController
 from controllers import TraceController
+from controllers import SplitController
 from utils.raw_body import read_raw_body
 from utils.schema_handler import SchemaHandler
 
@@ -37,4 +38,20 @@ class TransferResource:
         return JSONResponse(
             content=jsonable_encoder(trace),
             status_code=http_status.HTTP_200_OK,
+        )
+
+    @SchemaHandler.validate("post_transfers_split.json")
+    def on_post_split(
+        self,
+        payload: dict,
+        raw_body: bytes = Depends(read_raw_body),
+        idempotency_key: str | None = Header(default=None),
+    ) -> JSONResponse:
+        """A divisão de uma competência do contrato pela cópia do split."""
+        controller = SplitController()
+        ledger_transaction = controller.create(payload, idempotency_key, raw_body)
+
+        return JSONResponse(
+            content=jsonable_encoder(ledger_transaction),
+            status_code=http_status.HTTP_201_CREATED,
         )

@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from tests.utils.requisition import BaseConnectorResponse
 from tests.utils.payload_generator import PayloadGenerator
 from tests.utils.request_generator import RequestGenerator
@@ -54,3 +56,18 @@ class ObjectGenerator:
         conferir o status."""
         closure_payload = PayloadGenerator.create_closure_payload(**kwargs)
         return RequestGenerator.POST_contract_ledgers_closure(contract_key, closure_payload)
+
+    @staticmethod
+    def create_split(contract_key: str, idempotency_key: str = None, **kwargs) -> tuple:
+        """A divisão da competência no contrato, com uma `Idempotency-Key`
+        nova quando nenhuma vem.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        if idempotency_key is None:
+            idempotency_key = str(uuid4())
+
+        split_payload = PayloadGenerator.create_split_payload(contract_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_split(split_payload, idempotency_key=idempotency_key)
+
+        return status, response, split_payload

@@ -176,3 +176,28 @@ class PayloadGenerator:
     def create_closure_payload(actor: str = "contract-api", reason: str = "fim da locação ALFA-2026-0042") -> dict:
         """O encerramento do contrato, como o Contrato o manda (01b §4)."""
         return {"actor": actor, "reason": reason}
+
+    @staticmethod
+    def create_split_payload(
+        contract_key: str,
+        period_reference: str = "2026-09",
+        value_date: str = None,
+        actor: str = "erp-alfa",
+        reason: str = None,
+    ) -> dict:
+        """A divisão da competência do caso do remodelagem/05 (TX2) no
+        contrato pedido. `value_date` e `reason` ausentes ficam fora do corpo.
+        """
+        payload = {
+            "contract_key": contract_key,
+            "period_reference": period_reference,
+            "actor": actor,
+        }
+
+        if value_date is not None:
+            payload["value_date"] = value_date
+
+        if reason is not None:
+            payload["reason"] = reason
+
+        return payload

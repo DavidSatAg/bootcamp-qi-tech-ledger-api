@@ -136,3 +136,20 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_transfers_split(payload: dict = None, idempotency_key: str = None) -> BaseConnectorResponse:
+        """A divisão da competência. A `Idempotency-Key` só vai quando há chave."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = ClientRequisition.send(
+            "POST",
+            "/transfers/split",
+            payload=payload,
+            headers=headers,
+        )
+
+        return response.response_status, response.response_json

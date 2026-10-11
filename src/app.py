@@ -198,6 +198,11 @@ def create_app() -> FastAPI:
         transfer_resource.on_get_trace,
         methods=["GET"],
     )
+    application.add_api_route(
+        "/transfers/split",
+        transfer_resource.on_post_split,
+        methods=["POST"],
+    )
 
     integrity_resource = IntegrityResource()
     application.add_api_route(
