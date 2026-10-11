@@ -3,6 +3,9 @@ from uuid import uuid4
 from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+LANDLORD = "22222222-2222-4222-8222-222222222222"
+PLATFORM = "99999999-9999-4999-8999-999999999999"
+EARMARKS = ["RENT", "IPTU", "CONDO", "WATER", "ELECTRICITY"]
 
 
 def provision_contract(**kwargs) -> dict:
@@ -27,6 +30,14 @@ def balance(ledger_account_key: str) -> int:
 def inflow(contract_key: str, **kwargs) -> dict:
     """A TX1: a entrada de 640000 na competência 2026-09."""
     status, response, _payload = ObjectGenerator.create_inflow(contract_key, **kwargs)
+    assert status == 201, response
+
+    return response
+
+
+def split(contract_key: str, **kwargs) -> dict:
+    """A TX2: a divisão da competência 2026-09."""
+    status, response, _payload = ObjectGenerator.create_split(contract_key, **kwargs)
     assert status == 201, response
 
     return response
@@ -160,3 +171,64 @@ class TestReversalCreate:
         reversals = [link for link in chain if link["ledger_transaction_type"] == "reversal"]
         assert len(reversals) == 3
         assert {link["reverses_transaction_key"] for link in reversals} == {tx1_key}
+
+    def test_transfers_reversal_reversal_cannot_be_reversed(self):
+        keys = provision_contract()
+        tx1 = inflow(keys["contract_key"])
+        reversal = reverse(tx1["ledger_transaction_key"])
+        payload = PayloadGenerator.create_reversal_payload()
+        idempotency_key = str(uuid4())
+
+        for _attempt in range(2):
+            status, response = RequestGenerator.POST_transfers_reversal(
+                reversal["ledger_transaction_key"], payload, idempotency_key=idempotency_key
+            )
+
+            assert status == 422, response
+            assert response["code"] == "QIT001016"
+
+        assert balance(keys["COLLECTION"]) == 0
+
+    def test_transfers_reversal_split_reverses_every_leg(self):
+        """A divisão volta inteira: cada perna invertida, as da plataforma
+        também. Parcial só com pernas iguais (D4)."""
+        keys = provision_contract()
+        inflow(keys["contract_key"])
+        tx2 = split(keys["contract_key"])
+        tx2_key = tx2["ledger_transaction_key"]
+        own_before = balance(keys["OWN"])
+        revenue_before = balance(keys["PLATFORM_FEE"])
+
+        status, response, _payload = ObjectGenerator.create_reversal(tx2_key, amount_in_cents=5000)
+
+        assert status == 400, response
+        assert response["code"] == "QIT000001"
+
+        response = reverse(tx2_key)
+
+        entries = trace(response["ledger_transaction_key"])["entries"]
+        assert [(entry["direction"], entry["purpose_code"], entry["amount_in_cents"]) for entry in entries] == [
+            ("D", "RENT", 450000),
+            ("D", "OWN", 50000),
+            ("D", "IPTU", 30000),
+            ("D", "CONDO", 80000),
+            ("D", "WATER", 12000),
+            ("D", "ELECTRICITY", 18000),
+            ("D", "PLATFORM_FEE", 5000),
+            ("C", "COLLECTION", 640000),
+            ("C", "OWN", 5000),
+        ]
+        assert (entries[0]["owner_party_key"], entries[0]["owner_role"]) == (LANDLORD, "landlord")
+        assert (entries[6]["owner_party_key"], entries[6]["owner_role"]) == (PLATFORM, "platform")
+        assert sum(entry["amount_in_cents"] for entry in entries if entry["direction"] == "D") == 645000
+        assert sum(entry["amount_in_cents"] for entry in entries if entry["direction"] == "C") == 645000
+        assert balance(keys["COLLECTION"]) == 640000
+        for purpose_code in EARMARKS:
+            assert balance(keys[purpose_code]) == 0, purpose_code
+        assert balance(keys["OWN"]) - own_before == -45000
+        assert balance(keys["PLATFORM_FEE"]) - revenue_before == -5000
+
+        status, response, _payload = ObjectGenerator.create_reversal(tx2_key)
+
+        assert status == 422, response
+        assert response["code"] == "QIT001015"

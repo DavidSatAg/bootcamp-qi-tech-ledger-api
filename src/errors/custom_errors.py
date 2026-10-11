@@ -386,3 +386,14 @@ class ReversalExceedsOriginal(QIException):
         description = "The reversals of the transaction would exceed the original amount."
         translation = "estornos excederiam o original"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class ReversalOfReversal(QIException):
+    code = "QIT001016"
+
+    def __init__(self) -> None:
+        title = "Reversal of reversal"
+        http_status = 422
+        description = "A reversal cannot be reversed."
+        translation = "não se estorna estorno"
+        super().__init__(title, self.code, http_status, description, translation)

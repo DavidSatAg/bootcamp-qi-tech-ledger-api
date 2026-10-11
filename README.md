@@ -804,6 +804,18 @@ nova: é um limite declarado.
    executa SQL livre, não lê dado para asserção, não monta cenário — o
    cenário nasce por `POST`.
 
+### O estorno parcial só vale com pernas de valor igual (fatia 11, D4)
+
+A RFC (`:151`) aceita `amount_in_cents` no `POST /transfers/{key}/reversal`
+sem restringir o parcial. O Ledger o aceita só quando todas as pernas da
+original têm o mesmo valor (Pix, repasse, liquidação, carteira): cada perna
+do estorno recebe o valor pedido. Na divisão, de pernas desiguais, o
+parcial responde `400 QIT000001` e nada se grava: ratear foi descartado no
+pagamento parcial (RFC `:376-378`, por analogia), e corrigir uma divisão é
+estorná-la inteira e alocar de novo (D0005). O `400` é um compromisso: o
+correto seria um `422`, mas nenhum código do guia cabe, e nenhuma fatia
+inventa código. Não é peça nova: é um limite declarado.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

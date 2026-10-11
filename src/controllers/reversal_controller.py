@@ -6,7 +6,7 @@ from constants import LOCK_TIMEOUT
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import LedgerTransactionNotFound, LockTimeout, ReversalExceedsOriginal
+from errors import InvalidSchema, LedgerTransactionNotFound, LockTimeout, ReversalExceedsOriginal, ReversalOfReversal
 from models import LedgerEntry, LedgerTransactionType
 from repositories import LedgerEntryRepository, LedgerTransactionRepository
 
@@ -83,6 +83,7 @@ class ReversalController(BaseController):
         reason}. Sem `amount_in_cents`, o estorno é total (RN-04a).
         """
         original_id = original.id
+        original_type = original.ledger_transaction_type.enumerator
         contract_key = original.contract_key
         period_reference = original.period_reference
 
@@ -110,8 +111,21 @@ class ReversalController(BaseController):
             "reason": header["reason"],
         }
 
-        # Sem pares: o estorno não consulta a `purpose_rule` (RN-06; G :354).
         posting_controller = PostingController()
+
+        # Estorno de estorno: o motor roda sem pernas só para gravar o 016
+        # sob a chave (RN-03; S05a RN-11).
+        if original_type == LedgerTransactionType.REVERSAL:
+            return posting_controller.post(
+                scope, transaction, [], [], success_status, after_lock=self._refuse_reversal, record_error=record_error
+            )
+
+        # Parcial só com as pernas da original de valor igual: ratear não
+        # há (RN-04b, D4). Pedido que não se lê: 400, nada se grava.
+        if amount_in_cents is not None and len({int(entry.amount_in_cents) for entry, _account in original_entries}) > 1:
+            raise InvalidSchema("amount_in_cents is only accepted when every leg of the original has the same amount")
+
+        # Sem pares: o estorno não consulta a `purpose_rule` (RN-06; G :354).
         return posting_controller.post(
             scope,
             transaction,
@@ -121,6 +135,11 @@ class ReversalController(BaseController):
             after_lock=lambda: self._check_remaining(original_id, original_debits, new_debits),
             record_error=record_error,
         )
+
+    @staticmethod
+    def _refuse_reversal() -> None:
+        """Passo 5 do estorno de estorno: não se estorna estorno (RN-03)."""
+        raise ReversalOfReversal()
 
     def _check_remaining(self, original_id: int, original_debits: int, new_debits: int) -> None:
         """Passo 5, com as contas travadas: trava a linha da original e soma
