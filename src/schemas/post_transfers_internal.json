@@ -8,7 +8,8 @@
     },
     "gross_amount_in_cents": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 1000000000000000
     },
     "allocations": {
       "type": "array",
@@ -72,7 +73,8 @@
               "properties": {
                 "value": {
                   "type": "integer",
-                  "minimum": 1
+                  "minimum": 1,
+                  "maximum": 1000000000000000
                 }
               },
               "required": [

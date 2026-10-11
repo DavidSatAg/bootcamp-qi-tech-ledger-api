@@ -8,7 +8,8 @@
     },
     "amount_in_cents": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 1000000000000000
     },
     "destination": {
       "type": "string",
