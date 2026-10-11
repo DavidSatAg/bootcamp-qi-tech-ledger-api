@@ -76,7 +76,7 @@ class InternalController(BaseController):
             legs,
             purpose_pairs,
             SUCCESS_STATUS,
-            after_lock=lambda: self._check_same_client_books(source, legs),
+            after_lock=lambda: self._check_same_client_books(source, [target for target, _part in credits]),
         )
 
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
@@ -96,12 +96,14 @@ class InternalController(BaseController):
         return LedgerTransactionType.INTERNAL
 
     @staticmethod
-    def _check_same_client_books(source, legs: list) -> None:
-        """Nenhuma perna sai do livro da origem (RN-07, D3). Chamada pelo
-        motor depois da trava e antes do saldo, com ou sem conta travada:
-        o 013 é gravado e sai antes de qualquer escrita."""
-        for ledger_account, _direction, _amount_in_cents in legs:
-            if ledger_account.client_key != source.client_key:
+    def _check_same_client_books(source, targets: list) -> None:
+        """Nenhum destino sai do livro da origem (RN-07, D3): todos os
+        resolvidos, com o do empate e os de parte 0, que não viram perna
+        (15b RN-01, RN-06). Chamada pelo motor depois da trava e antes do
+        saldo, com ou sem conta travada: o 013 é gravado e sai antes de
+        qualquer escrita."""
+        for target in targets:
+            if target.client_key != source.client_key:
                 raise CrossesClientBooks()
 
     def _find_targets(self, allocations: list) -> list:

@@ -1,8 +1,10 @@
 from uuid import uuid4
 
-from tests.utils import ObjectGenerator, RequestGenerator
+from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+OTHER_CLIENT = "9c9c9c9c-9c9c-49c9-89c9-9c9c9c9c9c9c"
+OTHER_CLIENT_PARTY = "99999999-9999-4999-8999-999999999999"
 
 
 def provision_contract(**kwargs) -> dict:
@@ -300,3 +302,36 @@ class TestInternalAllocations:
         assert response["code"] == "QIT001018"
         assert balance(keys["COLLECTION"]) == 640000
         assert balance(keys["OWN"]) == own_before
+
+    def test_transfers_internal_zero_part_other_client_refused(self):
+        """RN-06, D2: a alocação de parte 0 não vira perna, mas o destino
+        dela entra no 013. A COLLECTION do outro cliente (9c9c…, S15a D7)
+        recebe 0,0001 de 100 centavos: sem o 013, sairia 201. O 013 é
+        gravado: a mesma chave o repete."""
+        contract_a = divided_contract()
+        contract_ledger_payload = PayloadGenerator.create_contract_ledger_payload()
+        contract_ledger_payload["client_key"] = OTHER_CLIENT
+        contract_ledger_payload["client_party_key"] = OTHER_CLIENT_PARTY
+        for item in contract_ledger_payload["items"]:
+            if item["purpose_code"] == "OWN":
+                item["beneficiary_party_key"] = OTHER_CLIENT_PARTY
+        status, contract_ledger = RequestGenerator.POST_contract_ledgers(contract_ledger_payload)
+        assert status == 201, contract_ledger
+        collection_b = {account["purpose_code"]: account["ledger_account_key"] for account in contract_ledger["accounts"]}[
+            "COLLECTION"
+        ]
+        accounts = [contract_a["OWN"], contract_a["COLLECTION"], collection_b]
+        balances_before = [balance(ledger_account_key) for ledger_account_key in accounts]
+        idempotency_key = str(uuid4())
+
+        for _attempt in range(2):
+            status, response, _payload = ObjectGenerator.create_internal_allocations(
+                contract_a["OWN"],
+                [remainder(contract_a["COLLECTION"]), percentage("0.0001", collection_b)],
+                idempotency_key=idempotency_key,
+                gross_amount_in_cents=100,
+            )
+
+            assert status == 422, response
+            assert response["code"] == "QIT001013"
+            assert [balance(ledger_account_key) for ledger_account_key in accounts] == balances_before
