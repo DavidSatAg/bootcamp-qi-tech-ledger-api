@@ -110,3 +110,28 @@ class LedgerAccountNotFound(QIException):
         description = f"Ledger account with key {ledger_account_key} was not found."
         translation = "conta inexistente"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class SplitVersionConflict(QIException):
+    code = "QIT001032"
+
+    def __init__(self, contract_key, split_version) -> None:
+        title = "Split version conflict"
+        http_status = 409
+        description = f"Split version {split_version} of contract {contract_key} already provisioned with different content."
+        translation = "versão de split já provisionada com outro conteúdo"
+        super().__init__(title, self.code, http_status, description, translation)
+
+
+class SplitVersionOutOfSequence(QIException):
+    code = "QIT001033"
+
+    def __init__(self, contract_key, split_version, latest_split_version) -> None:
+        title = "Split version out of sequence"
+        http_status = 409
+        description = (
+            f"Split version {split_version} of contract {contract_key} is out of sequence: "
+            f"the latest provisioned version is {latest_split_version}."
+        )
+        translation = "versão de split fora de sequência"
+        super().__init__(title, self.code, http_status, description, translation)

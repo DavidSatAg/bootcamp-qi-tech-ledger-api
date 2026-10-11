@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
@@ -86,3 +88,36 @@ class TestContractLedgerProvision:
         assert status == 201
         assert second_version["split_version"] == 2
         assert keys_by_purpose(second_version) == keys_by_purpose(first_version)
+
+    def test_contract_ledgers_version_rules(self):
+        # Cada caso: os passos (versão, aluguel) num contrato novo, o status
+        # de cada passo e o código esperado no último. Aluguel None é o
+        # padrão; 409032 é o aluguel que o mock do 01b recusa com 032.
+        cases = [
+            ("v1 repetida", [(1, None), (1, None)], [201, 200], None),
+            ("v1, v2 e v1 de novo", [(1, None), (2, None), (1, None)], [201, 201, 200], None),
+            ("v1 com outro conteúdo", [(1, None), (1, 409032)], [201, 409], "QIT001032"),
+            ("v1 antiga com outro conteúdo", [(1, None), (2, None), (1, 409032)], [201, 201, 409], "QIT001033"),
+            ("contrato novo em v2", [(2, None)], [409], "QIT001033"),
+            ("v1 e depois v3", [(1, None), (3, None)], [201, 409], "QIT001033"),
+        ]
+
+        for name, steps, expected_statuses, expected_code in cases:
+            contract_key = str(uuid4())
+            responses = []
+
+            for (split_version, rent_amount_in_cents), expected_status in zip(steps, expected_statuses):
+                status, response = ObjectGenerator.create_contract_ledger(
+                    contract_key=contract_key,
+                    split_version=split_version,
+                    rent_amount_in_cents=rent_amount_in_cents,
+                )
+                assert status == expected_status, f"{name}: veio {status} {response}"
+                responses.append(response)
+
+            if expected_code is not None:
+                assert responses[-1]["code"] == expected_code, name
+            else:
+                replayed_version = steps[-1][0]
+                first_response_of_version = responses[[step[0] for step in steps].index(replayed_version)]
+                assert responses[-1] == first_response_of_version, name

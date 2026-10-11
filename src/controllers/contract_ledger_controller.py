@@ -1,8 +1,11 @@
 from decimal import Decimal
 
+from sqlalchemy.exc import IntegrityError
+
 from constants import PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
 from dtos import ContractLedgerDTO
+from errors import SplitVersionConflict, SplitVersionOutOfSequence
 from models import LedgerAccount, LedgerAccountType, PurposeCode, SplitSnapshot
 from repositories import LedgerAccountRepository, SplitSnapshotRepository
 from utils.request_context import get_request_id
@@ -18,6 +21,25 @@ CLIENT_BOOKS = [
     (LedgerAccountType.REVENUE, PurposeCode.PLATFORM_FEE, "platform"),
 ]
 
+FOUR_PLACES = Decimal("0.0001")
+
+
+def four_places(percentage) -> str:
+    """O percentual com 4 casas: "10", "10.0" e Decimal("10.0000") são o mesmo."""
+    return str(Decimal(percentage).quantize(FOUR_PLACES))
+
+
+def split_item(purpose_code: str, owner_party_key: str, allocation_type: str, value) -> tuple:
+    """Um item do split como se compara: propósito, dono, tipo e valor."""
+    if allocation_type == SplitSnapshot.PERCENTAGE:
+        value = four_places(value)
+    elif allocation_type == SplitSnapshot.FIXED:
+        value = str(value)
+    else:
+        value = ""
+
+    return (purpose_code, owner_party_key, allocation_type, value)
+
 
 class ContractLedgerController(BaseController):
     """O provisionamento: os livros do cliente e os earmarks do contrato."""
@@ -30,8 +52,38 @@ class ContractLedgerController(BaseController):
     def provision(self, payload: dict) -> tuple:
         """Abre o que falta e devolve (corpo, criou?).
 
-        Tudo numa transação só, com o commit na última linha.
+        A corrida: duas requisições com o mesmo contrato (ou o mesmo
+        cliente) podem passar juntas pela busca e tentar criar a mesma
+        linha. Quem chega depois esbarra numa UNIQUE do banco, e não numa
+        trava: não há saldo em jogo. Essa requisição desfaz a sua
+        transação e refaz o provisionamento UMA vez, já enxergando o que a
+        outra gravou — o replay vira 200, o conflito vira 409 e o livro de
+        outro contrato é reusado. Esbarrar de novo sobe como 500.
         """
+        try:
+            return self._provision_once(payload)
+        except IntegrityError:
+            self.logger.info("Corrida no provisionamento: refazendo sobre o que a outra requisição gravou")
+            self.session.rollback()
+
+        return self._provision_once(payload)
+
+    def _provision_once(self, payload: dict) -> tuple:
+        """Uma tentativa inteira, numa transação só, com o commit no fim.
+
+        A versão pedida decide o caminho (RN-05): uma versão que já existe
+        é replay ou conflito, e nada se grava; só a próxima cria.
+        """
+        contract_key = payload["contract_key"]
+        split_version = payload["split_version"]
+        latest_split_version = self.split_snapshot_repository.get_max_version(contract_key)
+
+        if split_version <= latest_split_version:
+            return self._replay(payload, latest_split_version), False
+
+        if split_version > latest_split_version + 1:
+            raise SplitVersionOutOfSequence(contract_key, split_version, latest_split_version)
+
         client_books = self._open_client_books(payload)
         collection = self._find_or_create(
             payload, LedgerAccountType.EARMARK, PurposeCode.COLLECTION, payload["contract_key"], "", ""
@@ -54,6 +106,88 @@ class ContractLedgerController(BaseController):
         self.session.commit()
 
         return contract_ledger_dto, True
+
+    def _replay(self, payload: dict, latest_split_version: int) -> dict:
+        """A versão já existe: mesmo conteúdo devolve as contas dela; outro
+        conteúdo é 032 se ela é a atual, e 033 se é anterior."""
+        contract_key = payload["contract_key"]
+        split_version = payload["split_version"]
+        rows = self.split_snapshot_repository.list_by_version(contract_key, split_version)
+
+        if self._content_of_rows(rows) != self._content_of_payload(payload):
+            if split_version == latest_split_version:
+                raise SplitVersionConflict(contract_key, split_version)
+            raise SplitVersionOutOfSequence(contract_key, split_version, latest_split_version)
+
+        targets = dict()
+        for split_snapshot, source_ledger_account, ledger_account in rows:
+            if source_ledger_account.purpose_code.enumerator == PurposeCode.OWN:
+                client_books = {PurposeCode.OWN: source_ledger_account, PurposeCode.PLATFORM_FEE: ledger_account}
+            else:
+                collection = source_ledger_account
+                targets[(ledger_account.purpose_code.enumerator, ledger_account.owner_party_key)] = ledger_account
+
+        item_accounts = []
+        for item in payload["items"]:
+            item_accounts.append(targets[(item["purpose_code"], self._item_owner(payload, item))])
+
+        return ContractLedgerDTO.obj_to_dict(
+            contract_key,
+            split_version,
+            self._expected_amount_in_cents(payload),
+            self._split_accounts(collection, item_accounts, client_books),
+        )
+
+    def _content_of_payload(self, payload: dict) -> tuple:
+        """O conteúdo do pedido, na forma em que o split_snapshot o guarda (RN-06)."""
+        items = []
+        for item in payload["items"]:
+            items.append(
+                split_item(item["purpose_code"], self._item_owner(payload, item), item["type"], item.get("value"))
+            )
+
+        return (
+            payload["rent_amount_in_cents"],
+            four_places(payload["platform_fee_percentage"]),
+            sorted(items),
+        )
+
+    def _content_of_rows(self, rows: list) -> tuple:
+        """O conteúdo gravado de uma versão: os itens saem da COLLECTION; a
+        taxa da plataforma é a linha que sai da `own`."""
+        rent_amount_in_cents = None
+        platform_fee_percentage = None
+        items = []
+
+        for split_snapshot, source_ledger_account, ledger_account in rows:
+            rent_amount_in_cents = int(split_snapshot.rent_amount_in_cents)
+
+            if source_ledger_account.purpose_code.enumerator == PurposeCode.OWN:
+                platform_fee_percentage = four_places(split_snapshot.percentage)
+                continue
+
+            value = split_snapshot.percentage
+            if split_snapshot.allocation_type == SplitSnapshot.FIXED:
+                value = int(split_snapshot.amount_in_cents)
+
+            items.append(
+                split_item(
+                    ledger_account.purpose_code.enumerator,
+                    ledger_account.owner_party_key,
+                    split_snapshot.allocation_type,
+                    value,
+                )
+            )
+
+        return (rent_amount_in_cents, platform_fee_percentage, sorted(items))
+
+    def _item_owner(self, payload: dict, item: dict) -> str:
+        """O dono da conta de destino do item. O item OWN vai para a `own/OWN`
+        do cliente, cujo dono é o `client_party_key`."""
+        if item["purpose_code"] == PurposeCode.OWN:
+            return payload["client_party_key"]
+
+        return item["beneficiary_party_key"]
 
     def _expected_amount_in_cents(self, payload: dict) -> int:
         """O valor esperado da competência: o aluguel mais os itens `fixed`."""
