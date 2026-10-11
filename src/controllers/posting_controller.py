@@ -86,6 +86,7 @@ class PostingController(BaseController):
         after_lock=None,
         after_write=None,
         record_error=True,
+        check_funds=True,
     ) -> str:
         """Posta uma transação e devolve a `ledger_transaction_key`.
 
@@ -100,6 +101,9 @@ class PostingController(BaseController):
         no mesmo SAVEPOINT (a outbox do repasse, fatia 09 RN-06).
         Com `record_error=False`, o erro não é gravado e desfaz a transação
         inteira (o webhook do provedor, fatia 10 RN-06).
+        Com `check_funds=False`, o passo 6 não roda: o estorno não confere
+        saldo, e o negativo é legítimo (fatia 11 RN-06; G :360, :463;
+        D0005 :53). O passo 4 trava como sempre.
         O commit é a última linha.
 
         O erro também é gravado (RN-11, desvio D-02), e por isso este é o
@@ -128,7 +132,7 @@ class PostingController(BaseController):
 
         execution = self.session.begin_nested()
         try:
-            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs, after_lock, after_write)
+            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs, after_lock, after_write, check_funds)
         except Exception as error:
             execution.rollback()
             qi_exception = self._as_qi_exception(error)
@@ -147,7 +151,7 @@ class PostingController(BaseController):
 
         return ledger_transaction_key
 
-    def _execute(self, transaction: dict, legs: list, purpose_pairs: list, after_lock, after_write) -> str:
+    def _execute(self, transaction: dict, legs: list, purpose_pairs: list, after_lock, after_write, check_funds=True) -> str:
         """Passos 2 a 8, nesta ordem: o par proibido sai antes da trava, e o
         que depende da trava, depois dela (guia do Ledger §5); e a releitura
         do status depois do 7 (RN-08 da fatia 08)."""
@@ -158,7 +162,8 @@ class PostingController(BaseController):
         if after_lock is not None:
             after_lock()
 
-        self._check_funds(locked)
+        if check_funds:
+            self._check_funds(locked)
 
         ledger_transaction = self._write(transaction, legs)
         self._recheck_accounts(legs)

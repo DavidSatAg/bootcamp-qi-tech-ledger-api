@@ -134,6 +134,8 @@ class ReversalController(BaseController):
             success_status,
             after_lock=lambda: self._check_remaining(original_id, original_debits, new_debits),
             record_error=record_error,
+            # O estorno não confere saldo (RN-06; G :360, :463).
+            check_funds=False,
         )
 
     @staticmethod

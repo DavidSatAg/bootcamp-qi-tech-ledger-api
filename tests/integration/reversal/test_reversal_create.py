@@ -35,6 +35,18 @@ def inflow(contract_key: str, **kwargs) -> dict:
     return response
 
 
+def cash_key() -> str:
+    """O `external/CASH` da Imobiliária Alfa: o dinheiro de verdade no banco."""
+    return ObjectGenerator.get_client_account_key(ALFA_CLIENT, "CASH")
+
+
+def assert_book_closes() -> None:
+    status, integrity = RequestGenerator.GET_integrity({"client_key": ALFA_CLIENT})
+    assert status == 200, integrity
+    assert integrity["difference_in_cents"] == 0
+    assert integrity["negative_accounts"] == []
+
+
 def split(contract_key: str, **kwargs) -> dict:
     """A TX2: a divisão da competência 2026-09."""
     status, response, _payload = ObjectGenerator.create_split(contract_key, **kwargs)
@@ -232,3 +244,29 @@ class TestReversalCreate:
 
         assert status == 422, response
         assert response["code"] == "QIT001015"
+
+    def test_transfers_reversal_distributed_inflow_goes_negative(self):
+        """A entrada já dividida volta assim mesmo: o estorno não confere
+        saldo, e a COLLECTION fica negativa com o estorno no histórico
+        (RN-06; CU-F1, H2)."""
+        keys = provision_contract()
+        tx1 = inflow(keys["contract_key"])
+        external_after_tx1 = balance(cash_key())
+        split(keys["contract_key"])
+
+        response = reverse(tx1["ledger_transaction_key"])
+
+        assert response["ledger_transaction_type"] == "reversal"
+        assert response["contract_key"] == keys["contract_key"]
+        assert response["period_reference"] == "2026-09"
+        assert response["payer_party_key"] is None
+        assert response["end_to_end_id"] is None
+        assert response["reverses_transaction_key"] == tx1["ledger_transaction_key"]
+        assert legs(trace(response["ledger_transaction_key"])["entries"]) == [
+            ("D", "earmark", "COLLECTION", 640000),
+            ("C", "external", "CASH", 640000),
+        ]
+        assert balance(keys["COLLECTION"]) == -640000
+        assert balance(keys["RENT"]) == 450000
+        assert balance(cash_key()) - external_after_tx1 == -640000
+        assert_book_closes()
