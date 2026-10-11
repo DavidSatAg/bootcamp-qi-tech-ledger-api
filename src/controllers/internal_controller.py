@@ -4,7 +4,7 @@ from decimal import ROUND_DOWN, Decimal
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import CrossesClientBooks, InvalidSchema, LedgerAccountNotFound
+from errors import CrossesClientBooks, InternalError, InvalidSchema, LedgerAccountNotFound
 from models import LedgerEntry, LedgerTransactionType
 from repositories import LedgerAccountRepository, LedgerTransactionRepository
 
@@ -53,15 +53,19 @@ class InternalController(BaseController):
             "reason": payload["reason"],
         }
         # O débito do bruto e um crédito por alocação de parte > 0, na ordem
-        # do array (15b RN-07). A parte 0 não vira perna (G:229), mas o
-        # destino dela tem o par conferido (15b RN-06).
+        # do array, e por último o do empate, se houver (15b RN-07). A parte
+        # 0 não vira perna (G:229), mas o destino dela tem o par conferido
+        # (15b RN-06).
         gross_amount_in_cents = payload["gross_amount_in_cents"]
-        parts = self._allocate(gross_amount_in_cents, payload["allocations"])
+        parts, tie_residue = self._allocate(gross_amount_in_cents, payload["allocations"])
+        credits = list(zip(targets, parts))
+        purpose_pairs = [(source, target) for target in targets]
+        if tie_residue > 0:
+            self._give_tie_to_own(source, credits, purpose_pairs, tie_residue)
         legs = [(source, LedgerEntry.DEBIT, gross_amount_in_cents)]
-        for target, part in zip(targets, parts):
+        for target, part in credits:
             if part > 0:
                 legs.append((target, LedgerEntry.CREDIT, part))
-        purpose_pairs = [(source, target) for target in targets]
 
         posting_controller = PostingController()
         ledger_transaction_key = posting_controller.post(
@@ -92,12 +96,14 @@ class InternalController(BaseController):
         return [self._find_account(allocation["target_account_key"]) for allocation in allocations]
 
     @staticmethod
-    def _allocate(gross_amount_in_cents: int, allocations: list) -> list:
-        """A parte de cada alocação, em centavos, na ordem do array (15b
-        RN-04). Em `Decimal`, nunca `float`: `fixed` é o `value`;
-        `percentage`, o piso de bruto × value / 100; a `remainder`, o que
-        sobra do bruto depois das demais, com o resíduo dos percentuais."""
+    def _allocate(gross_amount_in_cents: int, allocations: list) -> tuple:
+        """(a parte de cada alocação, em centavos, na ordem do array; os
+        centavos do empate no corte) (15b RN-04). Em `Decimal`, nunca
+        `float`: `fixed` é o `value`; `percentage`, o piso de
+        bruto × value / 100. Com `remainder`, ela leva o que sobra, com o
+        resíduo dos percentuais; sem ela, o maior resto (D0004 :54-63)."""
         parts = []
+        fractions = dict()
         remainder_index = None
 
         for index, allocation in enumerate(allocations):
@@ -108,12 +114,50 @@ class InternalController(BaseController):
                 parts.append(allocation["value"])
             else:
                 nominal = Decimal(gross_amount_in_cents) * Decimal(allocation["value"]) / 100
-                parts.append(int(nominal.to_integral_value(rounding=ROUND_DOWN)))
+                floor = nominal.to_integral_value(rounding=ROUND_DOWN)
+                parts.append(int(floor))
+                fractions[index] = nominal - floor
 
         if remainder_index is not None:
             parts[remainder_index] = gross_amount_in_cents - sum(parts)
+            return parts, 0
 
-        return parts
+        return parts, InternalController._largest_remainder(gross_amount_in_cents - sum(parts), parts, fractions)
+
+    @staticmethod
+    def _largest_remainder(residue: int, parts: list, fractions: dict) -> int:
+        """Distribui o resíduo pelos percentuais, em ordem decrescente de
+        fração, grupo a grupo de frações iguais: o grupo que cabe ganha 1
+        centavo por alocação; o primeiro que não cabe é o empate no corte, e
+        o que sobra é devolvido (15b RN-04, RN-05). Só a fração decide, nunca
+        a ordem do array nem o `id` (D0004 :104-105)."""
+        for fraction in sorted({fraction for fraction in fractions.values() if fraction > 0}, reverse=True):
+            group = [index for index, index_fraction in fractions.items() if index_fraction == fraction]
+            if len(group) > residue:
+                break
+            for index in group:
+                parts[index] = parts[index] + 1
+            residue = residue - len(group)
+
+        return residue
+
+    def _give_tie_to_own(self, source, credits: list, purpose_pairs: list, tie_residue: int) -> None:
+        """O empate no corte vai para a `own/OWN` do cliente da origem (15b
+        RN-05; D0013 :83-84): somado à primeira alocação que aponta para
+        ela, ou numa perna nova, com o par (origem, `own`) a conferir. Sem a
+        `own`, é bug (G:375-379): 500 antes do motor, sem gravar."""
+        own = self.ledger_account_repository.find_client_own(source.client_key)
+
+        if own is None:
+            raise InternalError()
+
+        for index, (target, part) in enumerate(credits):
+            if target.id == own.id:
+                credits[index] = (target, part + tie_residue)
+                return
+
+        credits.append((own, tie_residue))
+        purpose_pairs.append((source, own))
 
     def _find_account(self, ledger_account_key: str):
         """A conta pela chave. Sem a origem não há cliente onde guardar a

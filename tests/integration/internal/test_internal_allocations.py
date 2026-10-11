@@ -108,6 +108,51 @@ class TestInternalAllocations:
         ]
         assert balance(keys["COLLECTION"]) == 539999
 
+    def test_transfers_internal_without_remainder_exact_sum(self):
+        """CU-J4 (05:166-167): sem `remainder`, os percentuais fecham o bruto."""
+        keys = collected_contract()
+
+        status, response, _payload = ObjectGenerator.create_internal_allocations(
+            keys["COLLECTION"], [percentage("90.0000", keys["RENT"]), percentage("10.0000", keys["OWN"])]
+        )
+
+        assert status == 201, response
+        assert legs(response["ledger_transaction_key"]) == [
+            ("D", keys["COLLECTION"], 500000),
+            ("C", keys["RENT"], 450000),
+            ("C", keys["OWN"], 50000),
+        ]
+        assert balance(keys["COLLECTION"]) == 140000
+
+    def test_transfers_internal_largest_remainder_ties_to_own(self):
+        """CU-J9 (D0004 :30-32, :54-63): sem `remainder`, o maior resto leva
+        o centavo; o empate no corte o manda para a `own` do cliente, somado
+        à alocação dela ou numa perna nova. O mesmo corpo, as mesmas partes."""
+        keys = collected_contract()
+        even_split = [percentage("50.0000", keys["RENT"]), percentage("50.0000", keys["OWN"])]
+        cases = [
+            (
+                [percentage("7.0000", keys["OWN"]), percentage("93.0000", keys["RENT"])],
+                [("C", keys["OWN"], 7000), ("C", keys["RENT"], 93001)],
+            ),
+            (even_split, [("C", keys["RENT"], 50000), ("C", keys["OWN"], 50001)]),
+            (even_split, [("C", keys["RENT"], 50000), ("C", keys["OWN"], 50001)]),
+            (
+                [percentage("50.0000", keys["RENT"]), percentage("50.0000", keys["IPTU"])],
+                [("C", keys["RENT"], 50000), ("C", keys["IPTU"], 50000), ("C", keys["OWN"], 1)],
+            ),
+        ]
+
+        for allocations, credits in cases:
+            status, response, _payload = ObjectGenerator.create_internal_allocations(
+                keys["COLLECTION"], allocations, gross_amount_in_cents=100001
+            )
+
+            assert status == 201, (allocations, response)
+            assert legs(response["ledger_transaction_key"]) == [("D", keys["COLLECTION"], 100001)] + credits
+
+        assert balance(keys["COLLECTION"]) == 239996
+
     def test_transfers_internal_refuses_malformed_allocations(self):
         """CU-J6 e J8 e o formato de cada tipo: o schema recusa, 400."""
         keys = provision_contract()

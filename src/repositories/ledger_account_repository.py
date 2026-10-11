@@ -79,6 +79,23 @@ class LedgerAccountRepository:
             .first()
         )
 
+    def find_client_own(self, client_key: str) -> LedgerAccount | None:
+        """A `own/OWN` do cliente, a de menor `id`, ou None. Ao contrário da
+        `find_by_natural_key`, o dono não entra no filtro: quem pede só sabe
+        o cliente (o empate do rateio interno, fatia 15b RN-05)."""
+        return (
+            self.session.query(LedgerAccount)
+            .join(LedgerAccount.ledger_account_type)
+            .join(LedgerAccount.purpose_code)
+            .filter(
+                LedgerAccount.client_key == client_key,
+                LedgerAccountType.enumerator == LedgerAccountType.OWN,
+                PurposeCode.enumerator == PurposeCode.OWN,
+            )
+            .order_by(LedgerAccount.id)
+            .first()
+        )
+
     def create(
         self,
         client_key: str,
