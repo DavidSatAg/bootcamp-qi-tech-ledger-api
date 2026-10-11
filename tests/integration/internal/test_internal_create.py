@@ -3,6 +3,8 @@ from uuid import uuid4
 from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+OTHER_CLIENT = "9c9c9c9c-9c9c-49c9-89c9-9c9c9c9c9c9c"
+OTHER_CLIENT_PARTY = "99999999-9999-4999-8999-999999999999"
 
 
 def provision_contract(**kwargs) -> dict:
@@ -106,6 +108,35 @@ class TestInternalCreate:
         assert response["code"] == "QIT001008"
         assert balance(contract_a["COLLECTION"]) == 640000
         assert balance(contract_b["IPTU"]) == 0
+
+    def test_transfers_internal_other_client_books_refused(self):
+        """CU-C5: a COLLECTION da Alfa não paga a `own` de outro cliente (o
+        9c9c…, D7). O 013 é gravado: a mesma chave repete o 013."""
+        contract_a = provision_contract()
+        status, response, _payload = ObjectGenerator.create_inflow(contract_a["contract_key"])
+        assert status == 201, response
+
+        contract_ledger_payload = PayloadGenerator.create_contract_ledger_payload()
+        contract_ledger_payload["client_key"] = OTHER_CLIENT
+        contract_ledger_payload["client_party_key"] = OTHER_CLIENT_PARTY
+        for item in contract_ledger_payload["items"]:
+            if item["purpose_code"] == "OWN":
+                item["beneficiary_party_key"] = OTHER_CLIENT_PARTY
+        status, contract_ledger = RequestGenerator.POST_contract_ledgers(contract_ledger_payload)
+        assert status == 201, contract_ledger
+        own_b = {account["purpose_code"]: account["ledger_account_key"] for account in contract_ledger["accounts"]}["OWN"]
+        own_b_before = balance(own_b)
+        idempotency_key = str(uuid4())
+
+        for _attempt in range(2):
+            status, response, _payload = ObjectGenerator.create_internal(
+                contract_a["COLLECTION"], own_b, idempotency_key=idempotency_key, gross_amount_in_cents=50000
+            )
+
+            assert status == 422, response
+            assert response["code"] == "QIT001013"
+            assert balance(contract_a["COLLECTION"]) == 640000
+            assert balance(own_b) == own_b_before
 
     def test_transfers_internal_unknown_account_returns_404(self):
         """O 018 sai antes do motor e não grava (D-01): a mesma chave, com o

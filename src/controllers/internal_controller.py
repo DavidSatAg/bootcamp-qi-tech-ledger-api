@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import InvalidSchema, LedgerAccountNotFound
+from errors import CrossesClientBooks, InvalidSchema, LedgerAccountNotFound
 from models import LedgerEntry, LedgerTransactionType
 from repositories import LedgerAccountRepository, LedgerTransactionRepository
 
@@ -61,12 +61,26 @@ class InternalController(BaseController):
 
         posting_controller = PostingController()
         ledger_transaction_key = posting_controller.post(
-            idempotency, transaction, legs, purpose_pairs, SUCCESS_STATUS
+            idempotency,
+            transaction,
+            legs,
+            purpose_pairs,
+            SUCCESS_STATUS,
+            after_lock=lambda: self._check_same_client_books(source, legs),
         )
 
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
         return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    @staticmethod
+    def _check_same_client_books(source, legs: list) -> None:
+        """Nenhuma perna sai do livro da origem (RN-07, D3). Chamada pelo
+        motor depois da trava e antes do saldo, com ou sem conta travada:
+        o 013 é gravado e sai antes de qualquer escrita."""
+        for ledger_account, _direction, _amount_in_cents in legs:
+            if ledger_account.client_key != source.client_key:
+                raise CrossesClientBooks()
 
     def _find_account(self, ledger_account_key: str):
         """A conta pela chave. Sem a origem não há cliente onde guardar a

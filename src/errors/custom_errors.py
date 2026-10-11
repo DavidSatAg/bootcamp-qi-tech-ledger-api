@@ -351,3 +351,14 @@ class PartyServiceUnavailable(QIException):
         description = "The party registry did not answer; nothing was recorded, and it is safe to retry."
         translation = "cadastro indisponível"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class CrossesClientBooks(QIException):
+    code = "QIT001013"
+
+    def __init__(self) -> None:
+        title = "Crosses client books"
+        http_status = 422
+        description = "The internal transfer would move money between the books of different clients."
+        translation = "atravessaria livros de clientes (rota internal)"
+        super().__init__(title, self.code, http_status, description, translation)
