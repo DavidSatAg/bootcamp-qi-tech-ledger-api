@@ -54,6 +54,29 @@ class TestInflowSuspense:
         assert book_balance("CASH") - external_before == 640000
         assert balance(collection_key(contract_ledger)) == 0
 
+    def test_transfers_inflow_suspense_replays_same_key(self):
+        contract_ledger = provision_contract()
+        suspense_before = book_balance("UNALLOCATED")
+        payload = PayloadGenerator.create_suspense_inflow_payload()
+        idempotency_key = payload["end_to_end_id"]
+
+        first_status, first = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+        second_status, second = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+
+        assert first_status == 201, first
+        assert second_status == 201, second
+        assert second["ledger_transaction_key"] == first["ledger_transaction_key"]
+        assert book_balance("UNALLOCATED") - suspense_before == 640000
+
+        contract_payload = PayloadGenerator.create_inflow_payload(
+            contract_ledger["contract_key"], end_to_end_id=payload["end_to_end_id"]
+        )
+        status, response = RequestGenerator.POST_transfers_inflow(contract_payload, idempotency_key=idempotency_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001010"
+        assert balance(collection_key(contract_ledger)) == 0
+
     def test_transfers_inflow_suspense_unknown_client_returns_404(self):
         status, response, _payload = ObjectGenerator.create_suspense_inflow(UNKNOWN_CLIENT)
 
