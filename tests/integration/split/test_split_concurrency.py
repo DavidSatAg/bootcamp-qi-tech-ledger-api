@@ -1,8 +1,9 @@
 from threading import Barrier, Thread
 from uuid import uuid4
 
-from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
+from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
 
+ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
 THREADS = 2
 
 
@@ -75,3 +76,33 @@ class TestSplitConcurrency:
         assert [status for status, _response in results] == [201, 422], results
         assert results[1][1]["code"] == "QIT001009"
         assert balance(keys["COLLECTION"]) == 0
+
+    def test_transfers_split_lock_timeout_conflicts(self):
+        """A COLLECTION travada por fora além do lock_timeout: 011, gravado
+        sob a chave; nada se move; com chave nova, depois, a divisão passa."""
+        keys = provision_contract()
+        status, response, _payload = ObjectGenerator.create_inflow(keys["contract_key"])
+        assert status == 201, response
+        payload = PayloadGenerator.create_split_payload(keys["contract_key"])
+        idempotency_key = str(uuid4())
+        with DbUtils.hold_row_lock(keys["COLLECTION"]):
+            status, response = RequestGenerator.POST_transfers_split(payload, idempotency_key=idempotency_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001011"
+        assert balance(keys["COLLECTION"]) == 640000
+        assert balance(keys["RENT"]) == 0
+        status, integrity = RequestGenerator.GET_integrity({"client_key": ALFA_CLIENT})
+        assert status == 200, integrity
+        assert integrity["difference_in_cents"] == 0
+
+        status, response = RequestGenerator.POST_transfers_split(payload, idempotency_key=idempotency_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001011"
+
+        status, response = RequestGenerator.POST_transfers_split(payload, idempotency_key=str(uuid4()))
+
+        assert status == 201, response
+        assert balance(keys["COLLECTION"]) == 0
+        assert balance(keys["RENT"]) == 450000

@@ -2,7 +2,7 @@ import hashlib
 import inspect
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import errors
 from constants import LOCK_TIMEOUT
@@ -14,6 +14,7 @@ from errors import (
     InternalError,
     InvalidSchema,
     LedgerAccountNotMovable,
+    LockTimeout,
     PurposePairNotAllowed,
     QIException,
     TransactionDoesNotBalance,
@@ -34,6 +35,10 @@ IDEMPOTENCY_TTL = timedelta(hours=24)
 # A UNIQUE(end_to_end_id) do database.sql não tem nome: este é o que o
 # Postgres dá a ela.
 END_TO_END_ID_CONSTRAINT = "ledger_transaction_end_to_end_id_key"
+
+# O SQLSTATE do Postgres para "lock_not_available": a trava não veio dentro
+# do lock_timeout.
+LOCK_NOT_AVAILABLE = "55P03"
 
 
 class PostingController(BaseController):
@@ -272,7 +277,11 @@ class PostingController(BaseController):
         """Passo 4: trava, em `id` crescente e com `lock_timeout`, as contas
         de passivo e patrimônio cujo líquido nas pernas é débito (D0007
         :35-55). Devolve [(conta, líquido devedor)], em `id`; nenhuma conta,
-        nenhum SQL."""
+        nenhum SQL.
+
+        O `55P03` vira o 011 aqui: passado adiante, o `_as_qi_exception` o
+        trocaria pelo InternalError. Outro erro de banco sobe como está.
+        """
         accounts = dict()
         net_debits = dict()
 
@@ -293,9 +302,14 @@ class PostingController(BaseController):
         if not locked:
             return locked
 
-        self.ledger_account_repository.lock_for_update(
-            [ledger_account.id for ledger_account, _net_debit in locked], LOCK_TIMEOUT
-        )
+        try:
+            self.ledger_account_repository.lock_for_update(
+                [ledger_account.id for ledger_account, _net_debit in locked], LOCK_TIMEOUT
+            )
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+                raise LockTimeout() from error
+            raise
 
         return locked
 
