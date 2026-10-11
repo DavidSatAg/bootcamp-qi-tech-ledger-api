@@ -254,3 +254,16 @@ class IdempotencyKeyConflict(QIException):
         )
         translation = "mesma chave de idempotência, corpo diferente; ou end_to_end_id já usado sob outra chave"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class LedgerTransactionNotFound(QIException):
+    code = "QIT001020"
+
+    def __init__(self, ledger_transaction_key=None) -> None:
+        title = "Ledger transaction not found"
+        http_status = 404
+        description = "The ledger transaction was not found."
+        if ledger_transaction_key is not None:
+            description = f"Ledger transaction with key {ledger_transaction_key} was not found."
+        translation = "transação inexistente"
+        super().__init__(title, self.code, http_status, description, translation)

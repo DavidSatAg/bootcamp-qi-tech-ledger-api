@@ -187,6 +187,11 @@ def create_app() -> FastAPI:
         transfer_resource.on_post_inflow,
         methods=["POST"],
     )
+    application.add_api_route(
+        "/transfers/{ledger_transaction_key}/trace",
+        transfer_resource.on_get_trace,
+        methods=["GET"],
+    )
 
     register_error_handlers(application)
 

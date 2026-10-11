@@ -107,3 +107,13 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def GET_transfer_trace(ledger_transaction_key: str) -> BaseConnectorResponse:
+        response = ClientRequisition.send(
+            "GET",
+            f"/transfers/{ledger_transaction_key}/trace",
+            headers={"INTERNAL-TOKEN": INTERNAL_TOKEN},
+        )
+
+        return response.response_status, response.response_json

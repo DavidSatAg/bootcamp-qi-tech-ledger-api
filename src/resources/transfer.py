@@ -4,6 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from controllers import InflowController
+from controllers import TraceController
 from utils.raw_body import read_raw_body
 from utils.schema_handler import SchemaHandler
 
@@ -26,4 +27,14 @@ class TransferResource:
         return JSONResponse(
             content=jsonable_encoder(ledger_transaction),
             status_code=http_status.HTTP_201_CREATED,
+        )
+
+    def on_get_trace(self, ledger_transaction_key: str) -> JSONResponse:
+        """A transação, as pernas dela e a cadeia do contrato na competência."""
+        controller = TraceController()
+        trace = controller.get_trace(ledger_transaction_key)
+
+        return JSONResponse(
+            content=jsonable_encoder(trace),
+            status_code=http_status.HTTP_200_OK,
         )
