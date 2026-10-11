@@ -205,3 +205,54 @@ CREATE TABLE ledger_entry(
     CHECK (amount_in_cents > 0)
 );
 
+-- --- Trilho externo -------------------------------------------------
+
+CREATE TABLE outbox_status(
+    id          SERIAL PRIMARY KEY,
+    enumerator  VARCHAR(50) NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(enumerator)
+);
+INSERT INTO outbox_status (enumerator) VALUES
+('pending'), ('in_flight'), ('sent'), ('settled'), ('failed'), ('dead');
+
+CREATE TABLE outbox(
+    id                          SERIAL PRIMARY KEY,
+    outbox_key                  CHAR(36) NOT NULL,
+    outbox_status_id            INTEGER NOT NULL REFERENCES outbox_status(id),
+    ledger_transaction_id       INTEGER NOT NULL REFERENCES ledger_transaction(id),
+    -- o dono da conta debitada. A chave Pix e lida do Cadastro a cada envio
+    beneficiary_party_key       VARCHAR(36) NOT NULL,
+    dispatch_idempotency_key    VARCHAR(255) NOT NULL,
+    payload                     JSONB NOT NULL,             -- so valor e referencias
+    attempt_count               INTEGER NOT NULL DEFAULT 0,
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(outbox_key),
+    UNIQUE(dispatch_idempotency_key)
+);
+
+CREATE TABLE outbox_status_event(
+    id              SERIAL PRIMARY KEY,
+    outbox_id       INTEGER NOT NULL REFERENCES outbox(id),
+    from_status_id  INTEGER REFERENCES outbox_status(id),
+    to_status_id    INTEGER NOT NULL REFERENCES outbox_status(id),
+    actor           VARCHAR(255) NOT NULL,
+    reason          VARCHAR(255),
+    trace_id        VARCHAR(64) NOT NULL,
+    event_datetime  TIMESTAMPTZ NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT(NOW())
+);
+
+CREATE TABLE provider_event(
+    id                  SERIAL PRIMARY KEY,
+    provider_event_key  CHAR(36) NOT NULL,
+    provider_reference  VARCHAR(255) NOT NULL,
+    event_type          VARCHAR(50) NOT NULL,
+    outbox_id           INTEGER REFERENCES outbox(id),      -- nulo no MED
+    raw_payload         JSONB NOT NULL,
+    received_at         TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(provider_event_key),
+    UNIQUE(provider_reference)
+);
+
