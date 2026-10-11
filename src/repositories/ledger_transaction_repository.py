@@ -44,3 +44,11 @@ class LedgerTransactionRepository:
 
     def get_type(self, enumerator: str) -> LedgerTransactionType:
         return self.session.query(LedgerTransactionType).filter(LedgerTransactionType.enumerator == enumerator).one()
+
+    def get_key_by_id(self, ledger_transaction_id: int) -> str | None:
+        """A chave da transação de `id` pedido: o `id` nunca sai da API."""
+        return (
+            self.session.query(LedgerTransaction.ledger_transaction_key)
+            .filter(LedgerTransaction.id == ledger_transaction_id)
+            .scalar()
+        )

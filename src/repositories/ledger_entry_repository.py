@@ -43,3 +43,17 @@ class LedgerEntryRepository:
         )
 
         return [(client_key, int(debits), int(credits)) for client_key, debits, credits in rows]
+
+    def list_by_transactions(self, ledger_transaction_ids: list) -> list:
+        """As pernas das transações pedidas, cada uma com a sua conta:
+        [(LedgerEntry, LedgerAccount)], por transação, débitos primeiro, e `id`.
+
+        `LedgerEntry` não tem relationship com a conta: por isso a tupla.
+        """
+        return (
+            self.session.query(LedgerEntry, LedgerAccount)
+            .join(LedgerAccount, LedgerEntry.ledger_account_id == LedgerAccount.id)
+            .filter(LedgerEntry.ledger_transaction_id.in_(ledger_transaction_ids))
+            .order_by(LedgerEntry.ledger_transaction_id, LedgerEntry.direction.desc(), LedgerEntry.id)
+            .all()
+        )
