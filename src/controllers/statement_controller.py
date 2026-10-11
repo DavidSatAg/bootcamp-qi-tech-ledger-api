@@ -1,12 +1,30 @@
 import hashlib
+import inspect
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
+import errors
 from controllers.base_controller import BaseController
-from controllers.posting_controller import PostingController
+from controllers.posting_controller import IDEMPOTENCY_TTL, PostingController
 from dtos import StatementDTO
-from errors import InvalidSchema, LedgerAccountNotFound, LockTimeout, StatementNotFound
+from errors import (
+    IdempotencyKeyConflict,
+    InternalError,
+    InvalidSchema,
+    LedgerAccountNotFound,
+    LockTimeout,
+    QIException,
+    StatementNotFound,
+)
 from models import LedgerAccountType, LedgerEntry
-from repositories import LedgerAccountRepository, StatementRepository
+from repositories import IdempotencyRecordRepository, LedgerAccountRepository, StatementRepository
+
+ENDPOINT = "POST /statement"
+
+# O status que o registro de idempotência guarda para o replay. O status da
+# resposta HTTP sai do resource, e os dois são o 201 do §3.1.
+SUCCESS_STATUS = 201
 
 # Os instantes do texto do hash: UTC, microssegundos e `Z` (decisão A2).
 HASH_INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -30,9 +48,16 @@ class StatementController(BaseController):
         super().__init__(__name__)
         self.statement_repository = StatementRepository(self.context)
         self.ledger_account_repository = LedgerAccountRepository(self.context)
+        self.idempotency_record_repository = IdempotencyRecordRepository(self.context)
 
     def issue(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
-        """Emite o extrato do período, na ordem da RN-04. O commit é a última linha."""
+        """Emite o extrato do período, na ordem da RN-04.
+
+        O registro da chave vem antes da trava (RN-05). O erro depois dele
+        também é gravado, por SAVEPOINT, e por isso há commit no caminho de
+        erro: é o desvio D-02 da 05a, com as quatro linhas no
+        `PostingController.post`, herdado aqui sem peça nova.
+        """
         PostingController.require_idempotency_key(idempotency_key)
         period_start, period_end = self._period(payload)
 
@@ -40,21 +65,29 @@ class StatementController(BaseController):
         if ledger_account is None:
             raise LedgerAccountNotFound(payload["ledger_account_key"])
 
-        cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
-        if cutoff is None:
-            raise LockTimeout()
-
-        previous_statement = self.statement_repository.get_last(ledger_account.id)
-        lines = self.statement_repository.list_lines(ledger_account.id, period_start, period_end, cutoff)
-        content_hash = self._content_hash(
-            ledger_account.ledger_account_key, period_start, period_end, previous_statement, lines
+        idempotency_record, replayed_key = self._register_idempotency_key(
+            ledger_account.client_key, idempotency_key, raw_body
         )
 
-        statement = self.statement_repository.create(
-            ledger_account, period_start, period_end, previous_statement, None, content_hash, cutoff
-        )
-        statement_dto = self._to_dict(statement, lines)
+        if replayed_key is not None:
+            return self.get_by_key(replayed_key)
 
+        execution = self.session.begin_nested()
+        try:
+            statement_dto = self._issue(ledger_account, period_start, period_end)
+        except Exception as error:
+            execution.rollback()
+            qi_exception = self._as_qi_exception(error)
+            self.idempotency_record_repository.set_response(
+                idempotency_record, qi_exception.http_status, [qi_exception.code]
+            )
+            self.session.commit()
+            raise qi_exception from error
+
+        execution.commit()
+        self.idempotency_record_repository.set_response(
+            idempotency_record, SUCCESS_STATUS, [statement_dto["statement_key"]]
+        )
         self.session.commit()
 
         return statement_dto
@@ -72,6 +105,93 @@ class StatementController(BaseController):
         )
 
         return self._to_dict(statement, lines)
+
+    def _issue(self, ledger_account, period_start: datetime, period_end: datetime) -> dict:
+        """A trava, o corte, as linhas, o hash e o INSERT (RN-06, RN-08)."""
+        cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
+        if cutoff is None:
+            raise LockTimeout()
+
+        previous_statement = self.statement_repository.get_last(ledger_account.id)
+        lines = self.statement_repository.list_lines(ledger_account.id, period_start, period_end, cutoff)
+        content_hash = self._content_hash(
+            ledger_account.ledger_account_key, period_start, period_end, previous_statement, lines
+        )
+
+        statement = self.statement_repository.create(
+            ledger_account, period_start, period_end, previous_statement, None, content_hash, cutoff
+        )
+
+        return self._to_dict(statement, lines)
+
+    def _register_idempotency_key(self, client_key: str, idempotency_key: str, raw_body: bytes) -> tuple:
+        """SAVEPOINT + INSERT do registro, como o passo 1 da 05a (D0003
+        :56-60). Devolve (registro, None) para seguir, ou (None, chave do
+        extrato) no replay de sucesso."""
+        request_fingerprint = hashlib.sha256(raw_body).hexdigest()
+        expires_at = datetime.now(timezone.utc) + IDEMPOTENCY_TTL
+
+        savepoint = self.session.begin_nested()
+        try:
+            idempotency_record = self.idempotency_record_repository.create(
+                client_key=client_key,
+                endpoint=ENDPOINT,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+                expires_at=expires_at,
+            )
+        except IntegrityError:
+            savepoint.rollback()
+            return self._collide(client_key, idempotency_key, request_fingerprint, expires_at)
+
+        savepoint.commit()
+
+        return idempotency_record, None
+
+    def _collide(self, client_key: str, idempotency_key: str, request_fingerprint: str, expires_at: datetime) -> tuple:
+        """A chave já existe: vencida, segue como nova; outra impressão, 010;
+        a mesma, replay da resposta guardada (D0003 :52-54)."""
+        idempotency_record = self.idempotency_record_repository.get_for_update(client_key, ENDPOINT, idempotency_key)
+
+        if idempotency_record.expires_at <= datetime.now(timezone.utc):
+            self.idempotency_record_repository.renew(idempotency_record, request_fingerprint, expires_at)
+            return idempotency_record, None
+
+        if idempotency_record.request_fingerprint != request_fingerprint:
+            raise IdempotencyKeyConflict()
+
+        if 200 <= idempotency_record.response_status < 300:
+            return None, idempotency_record.response_keys[0]
+
+        raise self._replay_error(idempotency_record)
+
+    def _replay_error(self, idempotency_record) -> QIException:
+        """O erro guardado, de novo, como o `PostingController._stored_error`:
+        a classe com o `code` guardado, criada sem argumentos (RN-13, D-03)."""
+        code = idempotency_record.response_keys[0]
+
+        for _class_name, error_class in inspect.getmembers(errors, inspect.isclass):
+            if issubclass(error_class, QIException) and error_class is not QIException and error_class.code == code:
+                return error_class()
+
+        # Inalcançável: todo `code` gravado vem de uma classe de `errors`.
+        internal_error = InternalError()
+        return QIException(
+            internal_error.title,
+            code,
+            idempotency_record.response_status,
+            internal_error.description,
+            internal_error.translation,
+        )
+
+    def _as_qi_exception(self, error: Exception) -> QIException:
+        """O erro como ele vai ser gravado e respondido: o nosso, como veio;
+        o imprevisto, logado e trocado pelo InternalError."""
+        if isinstance(error, QIException):
+            return error
+
+        self.logger.exception("Erro inesperado na emissão do extrato")
+        return InternalError()
 
     def _period(self, payload: dict) -> tuple:
         """As datas do corpo. O `pattern` do schema conta dígitos, não dias:

@@ -61,6 +61,24 @@ class TestStatementIssue:
         assert response["total_credit_in_cents"] == 0
         assert response["closing_balance_in_cents"] == 0
 
+    def test_statement_replays_same_key(self):
+        _contract_key, collection_key = provision_with_tx1()
+        payload = PayloadGenerator.create_statement_payload(collection_key)
+        idempotency_key = str(uuid4())
+
+        first_status, first_response = RequestGenerator.POST_statement(payload, idempotency_key=idempotency_key)
+        second_status, second_response = RequestGenerator.POST_statement(payload, idempotency_key=idempotency_key)
+
+        assert first_status == 201, first_response
+        assert second_status == 201, second_response
+        assert second_response == first_response
+
+        other_actor = PayloadGenerator.create_statement_payload(collection_key, actor="erp-beta")
+        status, response = RequestGenerator.POST_statement(other_actor, idempotency_key=idempotency_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001010"
+
     def test_statement_unknown_account_returns_404(self):
         status, response, _payload = ObjectGenerator.create_statement(str(uuid4()))
 
