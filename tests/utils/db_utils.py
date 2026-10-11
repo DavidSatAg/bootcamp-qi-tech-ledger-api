@@ -95,3 +95,45 @@ class DbUtils:
                 connection.exec_driver_sql(f"TRUNCATE {table}")
         finally:
             engine.dispose()
+
+    @staticmethod
+    def update_first_row(table: str) -> None:
+        """Manda `UPDATE <table> SET id = id` na primeira linha e deixa o erro
+        do banco subir.
+
+        Peça acrescentada pelo Ledger (fatia 05a), com as quatro linhas:
+        1. Princípio tocado: "`db_utils` só zera, nunca monta cenário".
+        2. Por que não funciona sem: `UPDATE`/`DELETE` nas tabelas
+           append-only não existem por HTTP, e o gatilho só dispara com
+           linha; CU-F9 exige a prova de que o banco os recusa.
+        3. A peça, e por que é a menor: dois métodos de SQL fixo (este e o
+           `delete_first_row`), sobre a linha de menor `id`, com o nome da
+           tabela validado como no `truncate`.
+        4. O que não faz: não executa SQL livre, não insere, não lê
+           resultado, não monta cenário (o cenário nasce por HTTP).
+        """
+        if not re.fullmatch(r"[a-z_]+", table):
+            raise ValueError(f"nome de tabela invalido: {table!r}")
+
+        engine = create_engine(DbUtils.database_url(), isolation_level="AUTOCOMMIT")
+
+        try:
+            with engine.connect() as connection:
+                connection.exec_driver_sql(f"UPDATE {table} SET id = id WHERE id = (SELECT MIN(id) FROM {table})")
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def delete_first_row(table: str) -> None:
+        """Manda `DELETE FROM <table>` na primeira linha e deixa o erro do
+        banco subir. As quatro linhas estão no `update_first_row`."""
+        if not re.fullmatch(r"[a-z_]+", table):
+            raise ValueError(f"nome de tabela invalido: {table!r}")
+
+        engine = create_engine(DbUtils.database_url(), isolation_level="AUTOCOMMIT")
+
+        try:
+            with engine.connect() as connection:
+                connection.exec_driver_sql(f"DELETE FROM {table} WHERE id = (SELECT MIN(id) FROM {table})")
+        finally:
+            engine.dispose()
