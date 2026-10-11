@@ -408,3 +408,16 @@ class OwnerWithoutWallet(QIException):
         description = "The owner of the source account has no wallet in the ledger."
         translation = "dono sem carteira"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class ClientBooksNotFound(QIException):
+    code = "QIT001019"
+
+    def __init__(self, client_key=None) -> None:
+        title = "Client books not found"
+        http_status = 404
+        description = "The client has no books in the ledger."
+        if client_key is not None:
+            description = f"The client {client_key} has no books in the ledger."
+        translation = "cliente sem livros no ledger"
+        super().__init__(title, self.code, http_status, description, translation)
