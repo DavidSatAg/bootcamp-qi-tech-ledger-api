@@ -5,3 +5,4 @@ from repositories.purpose_rule_repository import PurposeRuleRepository
 from repositories.ledger_transaction_repository import LedgerTransactionRepository
 from repositories.ledger_entry_repository import LedgerEntryRepository
 from repositories.idempotency_record_repository import IdempotencyRecordRepository
+from repositories.statement_repository import StatementRepository

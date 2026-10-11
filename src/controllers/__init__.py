@@ -6,3 +6,4 @@ from controllers.inflow_controller import InflowController
 from controllers.trace_controller import TraceController
 from controllers.integrity_controller import IntegrityController
 from controllers.split_controller import SplitController
+from controllers.statement_controller import StatementController

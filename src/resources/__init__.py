@@ -4,3 +4,4 @@ from resources.ledger_account import LedgerAccountResource
 from resources.contract_ledger import ContractLedgerResource
 from resources.transfer import TransferResource
 from resources.integrity import IntegrityResource
+from resources.statement import StatementResource

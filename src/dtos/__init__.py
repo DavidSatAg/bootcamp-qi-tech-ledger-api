@@ -4,3 +4,4 @@ from dtos.contract_ledger_dto import ContractLedgerDTO
 from dtos.ledger_transaction_dto import LedgerTransactionDTO
 from dtos.trace_dto import TraceDTO
 from dtos.integrity_dto import IntegrityDTO
+from dtos.statement_dto import StatementDTO

@@ -289,3 +289,16 @@ class PeriodAlreadySplit(QIException):
         description = "The contract period was already split."
         translation = "competência já dividida"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class StatementNotFound(QIException):
+    code = "QIT001022"
+
+    def __init__(self, statement_key=None) -> None:
+        title = "Statement not found"
+        http_status = 404
+        description = "The statement was not found."
+        if statement_key is not None:
+            description = f"Statement with key {statement_key} was not found."
+        translation = "extrato inexistente"
+        super().__init__(title, self.code, http_status, description, translation)
