@@ -3,11 +3,11 @@ import inspect
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import errors
 from controllers.base_controller import BaseController
-from controllers.posting_controller import IDEMPOTENCY_TTL, PostingController
+from controllers.posting_controller import IDEMPOTENCY_TTL, LOCK_NOT_AVAILABLE, PostingController
 from dtos import StatementDTO
 from errors import (
     IdempotencyKeyConflict,
@@ -132,9 +132,14 @@ class StatementController(BaseController):
 
     def _issue(self, ledger_account, period_start: datetime, period_end: datetime) -> dict:
         """A trava, o corte, as linhas, o hash e o INSERT (RN-06, RN-08)."""
-        cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
-        if cutoff is None:
-            raise LockTimeout()
+        # O `55P03` vira o 011 aqui, como no motor: passado adiante, o
+        # `_as_qi_exception` o trocaria pelo InternalError.
+        try:
+            cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+                raise LockTimeout() from error
+            raise
 
         lines = self.statement_repository.list_lines(ledger_account.id, period_start, period_end, cutoff)
         supersedes_statement = self._superseded_statement(ledger_account, period_start, period_end, lines)
