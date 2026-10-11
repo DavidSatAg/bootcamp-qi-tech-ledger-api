@@ -98,6 +98,7 @@ class ContractLedgerController(BaseController):
         if split_version > latest_split_version + 1:
             raise SplitVersionOutOfSequence(contract_key, split_version, latest_split_version)
 
+        self._check_client_owner(payload)
         client_books = self._open_client_books(payload)
         collection = self._find_or_create(
             payload, LedgerAccountType.EARMARK, PurposeCode.COLLECTION, payload["contract_key"], "", ""
@@ -209,6 +210,18 @@ class ContractLedgerController(BaseController):
                 f"the platform fee {platform_fee_percentage}% is above the administration fee {administration_fee}%"
             )
 
+    def _check_client_owner(self, payload: dict) -> None:
+        """Cliente e parte são 1:1 (RN-07, L19): se o livro do cliente já
+        tem a `own/OWN`, o `client_party_key` tem de ser o dono dela. Outro
+        dono é bug do Contrato, e por isso 400, antes de criar conta."""
+        client_own = self.ledger_account_repository.find_client_own(payload["client_key"])
+
+        if client_own is not None and client_own.owner_party_key != payload["client_party_key"]:
+            raise InvalidSchema(
+                f"client_party_key {payload['client_party_key']} is not the owner of the books of "
+                f"client {payload['client_key']}"
+            )
+
     def _replay(self, payload: dict, latest_split_version: int) -> dict:
         """A versão já existe: mesmo conteúdo devolve as contas dela; outro
         conteúdo é 032 se ela é a atual, e 033 se é anterior."""
@@ -241,7 +254,8 @@ class ContractLedgerController(BaseController):
         )
 
     def _content_of_payload(self, payload: dict) -> tuple:
-        """O conteúdo do pedido, na forma em que o split_snapshot o guarda (RN-06)."""
+        """O conteúdo do pedido, na forma em que o split_snapshot o guarda (RN-06),
+        com o cliente e o dono do livro dele (RN-07 da fatia 16)."""
         items = []
         for item in payload["items"]:
             items.append(
@@ -252,6 +266,8 @@ class ContractLedgerController(BaseController):
             payload["rent_amount_in_cents"],
             four_places(payload["platform_fee_percentage"]),
             sorted(items),
+            payload["client_key"],
+            payload["client_party_key"],
         )
 
     def _content_of_rows(self, rows: list) -> tuple:
@@ -259,6 +275,8 @@ class ContractLedgerController(BaseController):
         taxa da plataforma é a linha que sai da `own`."""
         rent_amount_in_cents = None
         platform_fee_percentage = None
+        client_key = None
+        client_party_key = None
         items = []
 
         for split_snapshot, source_ledger_account, ledger_account in rows:
@@ -266,6 +284,8 @@ class ContractLedgerController(BaseController):
 
             if source_ledger_account.purpose_code.enumerator == PurposeCode.OWN:
                 platform_fee_percentage = four_places(split_snapshot.percentage)
+                client_key = source_ledger_account.client_key
+                client_party_key = source_ledger_account.owner_party_key
                 continue
 
             value = split_snapshot.percentage
@@ -281,7 +301,7 @@ class ContractLedgerController(BaseController):
                 )
             )
 
-        return (rent_amount_in_cents, platform_fee_percentage, sorted(items))
+        return (rent_amount_in_cents, platform_fee_percentage, sorted(items), client_key, client_party_key)
 
     def _item_owner(self, payload: dict, item: dict) -> str:
         """O dono da conta de destino do item. O item OWN vai para a `own/OWN`
