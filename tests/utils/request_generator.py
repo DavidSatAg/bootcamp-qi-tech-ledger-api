@@ -125,3 +125,14 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_contract_ledgers_closure(contract_key: str, closure_payload: dict) -> BaseConnectorResponse:
+        response = ClientRequisition.send(
+            "POST",
+            f"/contract_ledgers/{contract_key}/closure",
+            payload=closure_payload,
+            headers={"INTERNAL-TOKEN": INTERNAL_TOKEN},
+        )
+
+        return response.response_status, response.response_json

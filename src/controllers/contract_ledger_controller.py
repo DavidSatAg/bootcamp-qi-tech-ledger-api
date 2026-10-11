@@ -6,7 +6,9 @@ from constants import PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
 from dtos import ContractLedgerDTO
 from errors import (
+    ContractNotProvisioned,
     InvalidSchema,
+    LockTimeout,
     PurposePairNotAllowed,
     SplitDoesNotClose,
     SplitVersionConflict,
@@ -117,6 +119,24 @@ class ContractLedgerController(BaseController):
         self.session.commit()
 
         return contract_ledger_dto, True
+
+    def close(self, contract_key: str, payload: dict) -> dict:
+        """Encerra as contas do contrato, tudo ou nada.
+
+        A trava vem primeiro: é a primeira leitura das contas nesta
+        requisição, e a que vê o status de quem commitou antes. Estourou o
+        `lock_timeout`: 011. Nenhuma conta com esse contrato: 035.
+        """
+        ledger_accounts = self.ledger_account_repository.lock_contract_accounts(contract_key)
+        if ledger_accounts is None:
+            raise LockTimeout()
+
+        if not ledger_accounts:
+            raise ContractNotProvisioned(contract_key)
+
+        self.session.commit()
+
+        return dict()
 
     def _check_split(self, payload: dict) -> None:
         """As conferências que vêm antes de qualquer escrita, nesta ordem

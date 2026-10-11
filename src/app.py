@@ -175,6 +175,11 @@ def create_app() -> FastAPI:
         contract_ledger_resource.on_post,
         methods=["POST"],
     )
+    application.add_api_route(
+        "/contract_ledgers/{contract_key}/closure",
+        contract_ledger_resource.on_post_closure,
+        methods=["POST"],
+    )
 
     application.add_api_route(
         "/ledger_accounts",

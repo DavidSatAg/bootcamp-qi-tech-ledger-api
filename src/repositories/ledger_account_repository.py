@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import case, func
+from sqlalchemy import case, func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import aliased
 
+from constants import LOCK_TIMEOUT
 from database import Context
 from models import (
     LedgerAccount,
@@ -155,6 +157,31 @@ class LedgerAccountRepository:
 
     def get_purpose_code(self, enumerator: str) -> PurposeCode:
         return self.session.query(PurposeCode).filter(PurposeCode.enumerator == enumerator).first()
+
+    def lock_contract_accounts(self, contract_key: str) -> list:
+        """Trava as contas do contrato, em ordem crescente de id, e as devolve.
+
+        `FOR UPDATE`, e não `FOR NO KEY UPDATE`: só ele conflita com o
+        `FOR KEY SHARE` que a FK do lançamento pega na conta. O
+        `populate_existing` relê o status do banco, por cima do que a
+        sessão já tivesse. A espera vai até o `lock_timeout`; estourou,
+        devolve None.
+        """
+        try:
+            self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
+
+            return (
+                self.session.query(LedgerAccount)
+                .filter(LedgerAccount.contract_key == contract_key)
+                .order_by(LedgerAccount.id)
+                .with_for_update()
+                .populate_existing()
+                .all()
+            )
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == "55P03":
+                return None
+            raise
 
     def find_contract_account(self, contract_key: str, purpose_code: str) -> LedgerAccount:
         """A conta do contrato com esse propósito (a COLLECTION, na entrada),

@@ -171,3 +171,8 @@ class PayloadGenerator:
             payload["value_date"] = value_date
 
         return payload
+
+    @staticmethod
+    def create_closure_payload(actor: str = "contract-api", reason: str = "fim da locação ALFA-2026-0042") -> dict:
+        """O encerramento do contrato, como o Contrato o manda (01b §4)."""
+        return {"actor": actor, "reason": reason}

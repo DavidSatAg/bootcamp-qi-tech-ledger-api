@@ -28,3 +28,14 @@ class ContractLedgerResource:
             content=jsonable_encoder(contract_ledger),
             status_code=status_code,
         )
+
+    @SchemaHandler.validate("post_contract_ledgers_closure.json")
+    def on_post_closure(self, contract_key: str, payload: dict) -> JSONResponse:
+        """O encerramento do contrato: 200 no primeiro fechamento e na repetição."""
+        controller = ContractLedgerController()
+        closure = controller.close(contract_key, payload)
+
+        return JSONResponse(
+            content=jsonable_encoder(closure),
+            status_code=http_status.HTTP_200_OK,
+        )

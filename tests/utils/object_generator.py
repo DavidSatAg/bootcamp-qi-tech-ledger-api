@@ -47,3 +47,10 @@ class ObjectGenerator:
         )
 
         return status, response, inflow_payload
+
+    @staticmethod
+    def close_contract_ledger(contract_key: str, **kwargs) -> tuple:
+        """Encerra o contrato no ledger. Devolve (status, corpo) sem
+        conferir o status."""
+        closure_payload = PayloadGenerator.create_closure_payload(**kwargs)
+        return RequestGenerator.POST_contract_ledgers_closure(contract_key, closure_payload)
