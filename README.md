@@ -705,8 +705,8 @@ além de rota, erro e tabela vem justificado aqui, em quatro linhas.
 
 1. *Princípio da base tocado:* o compose da base sobe só `api` e `db`.
 2. *Por que não funciona sem:* os testes de integração falam HTTP com a
-   API, e a API chama outros serviços; sem mock, nenhum teste roda sem os
-   três serviços de pé.
+   API, e a API chama o Cadastro e o provedor Pix; sem mock, nenhum teste
+   roda sem os três serviços de pé.
 3. *A peça, e por que é a menor:* um container WireMock por dependência,
    configurado só por arquivos JSON — zero código.
 4. *O que ela não faz:* não roda em produção, não guarda estado entre
@@ -717,19 +717,23 @@ além de rota, erro e tabela vem justificado aqui, em quatro linhas.
 1. *Princípio da base tocado:* erro previsto não grava nada, e o controller
    só commita depois que a regra passou.
 2. *Por que não funciona sem:* a mesma `Idempotency-Key` tem de devolver o
-   mesmo erro (D0003). Sem o erro gravado, a repetição — ou a requisição que
+   mesmo erro. Sem o erro gravado, a repetição — ou a requisição que
    esperava no `INSERT` da mesma chave — roda o motor de novo e pode
    responder outra coisa.
-3. *A peça, e por que é a menor:* um `SAVEPOINT` de execução logo depois do
-   registro da chave. No erro, `ROLLBACK TO SAVEPOINT` desfaz só o
-   movimento; o registro recebe o status e o código; e o commit é o da
-   mesma transação, sem sessão nova nem segundo commit.
-4. *O que ela não faz:* não grava falha de schema nem o `QIT001035` (que
-   saem antes do registro), não grava movimento pela metade, não tenta de
-   novo e não guarda a `description` dinâmica do erro.
-   Nem grava o erro do webhook do provedor (`record_error=False`, fatia
-   10): lá a idempotência é a do `provider_event`, e o erro desfaz a
-   transação inteira, com o `provider_event` junto.
+3. *A peça, e por que é a menor:* um `SAVEPOINT` logo depois do registro da
+   chave. No erro, `ROLLBACK TO SAVEPOINT` desfaz só o movimento; o registro
+   recebe o status e o código; e o commit é o da mesma transação, sem
+   sessão nova nem segundo commit.
+4. *O que ela não faz:* não grava falha de schema, o `QIT001035`, o
+   `QIT001019` (S05b D-01) nem o `QIT001018` da conta de origem ou de
+   destino de `/transfers/payout` e `/transfers/internal` e da conta de
+   `/statement`, nem o `QIT001020` do estorno (transação inexistente) e do
+   MED (`end_to_end_id` desconhecido) (que saem antes do registro; S09 D-01,
+   S15a D-01, S13 RN-04, S11 D-01),
+   não grava erro do webhook do provedor (que é idempotente pelo
+   `provider_event` e desfaz tudo no erro, para o provedor repetir),
+   não grava movimento pela metade, não tenta de novo e não guarda a
+   `description` dinâmica do erro.
 
 ### O `QIT001010` também cobre o `end_to_end_id` repetido (fatia 05a)
 
@@ -751,15 +755,21 @@ nova: é um limite declarado.
 
 ### A trava de uma linha no teste (`DbUtils.hold_row_lock`, fatia 08)
 
-1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
-2. *Por que não funciona sem:* a ordem "entrada passa o passo 2 →
-   encerramento commita → entrada grava o passo 7" não se produz por HTTP;
-   o `Barrier` (CA-07) só a sorteia, e sem ela a RN-08 não tem vermelho.
-3. *A peça, e por que é a menor:* trava **uma** linha, em conexão própria,
-   pelo tempo do `with`; não muda nada, e o `ROLLBACK` a solta.
+1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco;
+   nunca monta cenário.
+2. *Por que não funciona sem:* a ordem "entrada passa a conferência de
+   status → encerramento commita → entrada grava" não se produz por HTTP;
+   threads simultâneas só a sorteiam, e sem ela a reconferência de status
+   do encerramento não tem teste que falhe.
+3. *A peça, e por que é a menor:* trava **uma** linha de `ledger_account`,
+   em conexão própria, pelo tempo de um `with`; não muda nada, e o
+   `ROLLBACK` a solta.
 4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
    executa SQL livre, não lê dado para asserção, não monta cenário — o
    cenário nasce por `POST`.
+
+A mesma peça prova o `409 QIT001011` da divisão (fatia 07): o teste segura a
+`COLLECTION` com `hold_row_lock` além do `lock_timeout` (S07 D-01).
 
 ### Os connectors do Cadastro e do provedor (`PartyConnector`, `ProviderConnector`, fatia 09)
 
@@ -787,22 +797,25 @@ nova: é um limite declarado.
    pernas, mais dois commits de estado (`in_flight`, resultado) e o commit
    que fecha a leitura: quatro commits numa requisição, sem fila nem
    agendador.
-4. *O que ela não faz:* não reenvia, não tem backoff, não marca `dead` nem
-   liquida, e não segura trava durante a chamada externa.
+4. *O que ela não faz:* não reenvia nem marca `dead` (isso é da fila,
+   abaixo), não tem backoff, não liquida, e não segura trava durante a
+   chamada externa. Com a fila, o despacho reivindica a linha antes de
+   enviar e pode voltar sem despachar, se outro já a reivindicou.
 
 ### A trava da transação original no teste (`DbUtils.hold_transaction_lock`, fatia 11)
 
-1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
-2. *Por que não funciona sem:* a trava da original no estorno (G :460) só
-   seria exposta por HTTP num estorno sem conta travável (ex.: o de uma
-   liquidação), e só por sorteio; com a `COLLECTION` ordenando, nenhum
-   vermelho determinístico.
-3. *A peça, e por que é a menor:* o `hold_row_lock` sobre
-   `ledger_transaction`: trava **uma** linha, em conexão própria, pelo tempo
-   do `with`; o `ROLLBACK` a solta.
-4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
-   executa SQL livre, não lê dado para asserção, não monta cenário — o
-   cenário nasce por `POST`.
+1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco;
+   nunca monta cenário.
+2. *Por que não funciona sem:* a trava da transação original só decide a
+   corrida entre estornos quando nenhuma conta os ordena antes; por HTTP, a
+   `COLLECTION` já os ordena, e só o estorno sem conta travável (uma
+   liquidação) a exporia, e apenas por sorteio — sem a peça, essa regra não
+   tem teste que falhe de forma determinística.
+3. *A peça, e por que é a menor:* trava **uma** linha de
+   `ledger_transaction`, em conexão própria, pelo tempo de um `with`; o
+   `ROLLBACK` a solta.
+4. *O que ela não faz:* não escreve, não executa SQL livre, não lê dado
+   para asserção, não monta cenário — o cenário nasce por `POST`.
 
 ### O estorno parcial só vale com pernas de valor igual (fatia 11, D4)
 
@@ -821,46 +834,37 @@ inventa código. Não é peça nova: é um limite declarado.
 1. *Princípio da base tocado:* a base faz um commit, na última linha do
    controller.
 2. *Por que não funciona sem:* o repasse que ficou `pending` por queda ou
-   por falha do Cadastro ou do provedor nunca sairia da outbox (D0006;
-   CU-E3).
-3. *A peça, e por que é a menor:* uma tentativa por linha `pending`, até o
-   `limit`, com a mesma `dispatch_idempotency_key`: dois commits por
-   tentativa (a reivindicação, que leva a linha a `in_flight`, e o
-   desfecho), e o que fecha a leitura da fila; a linha travada por outro é
-   pulada; `dead` ao esgotar o `OUTBOX_MAX_ATTEMPTS`.
+   falha do provedor nunca sairia.
+3. *A peça, e por que é a menor:* uma tentativa por linha, com dois
+   commits (`in_flight`, resultado), reivindicando a linha com `SKIP
+   LOCKED` — a linha travada por outro é pulada — e marcando `dead` ao
+   esgotar o `OUTBOX_MAX_ATTEMPTS`; disparada por rota, sem agendador.
 4. *O que ela não faz:* não tem backoff nem relógio, não estorna o `dead`
-   (o operador estorna o repasse pela rota de estorno), não tira linha de
-   `in_flight` e não segura trava durante a chamada de rede.
-
-O despacho inline do repasse passa pela mesma reivindicação: se a fila já
-tem a linha, o `POST /transfers/payout` responde com a outbox no estado em
-que ela está, sem despachar de novo.
+   (o operador estorna pela rota de estorno), não tira linha de
+   `in_flight` e não segura trava durante a chamada externa.
 
 ### A trava de uma outbox no teste (`DbUtils.hold_outbox_lock`, fatia 14)
 
-1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
+1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco.
 2. *Por que não funciona sem:* duas reivindicações simultâneas da mesma
-   linha da outbox não se produzem por HTTP de forma determinística; sem
-   ela, "a linha travada por outro é pulada" não tem vermelho.
-3. *A peça, e por que é a menor:* o `hold_row_lock` sobre `outbox`: trava
-   **uma** linha, em conexão própria, pelo tempo do `with`; o `ROLLBACK` a
-   solta.
-4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
-   executa SQL livre, não lê dado para asserção, não monta cenário — o
-   cenário nasce por `POST`.
+   linha não se produzem por HTTP de forma determinística; sem a peça, o
+   `SKIP LOCKED` não tem teste que falhe.
+3. *A peça, e por que é a menor:* trava uma linha de `outbox`, em conexão
+   própria, pelo tempo de um `with`; o `ROLLBACK` a solta.
+4. *O que ela não faz:* não escreve, não executa SQL livre, não lê dado
+   para asserção, não monta cenário.
 
 ### O provedor que aceita depois (`RequestGenerator.accept_pix`, fatia 14)
 
-1. *Princípio da base tocado:* o mock é fixo por chave: cada dono tem uma
-   resposta só.
-2. *Por que não funciona sem:* nenhum mock falha e depois aceita, e a
-   D0006 pede que a fila entregue depois o que falhou.
-3. *A peça, e por que é a menor:* um mapeamento no `/__admin/mappings` do
-   `provider-mock`, de **uma** chave de despacho do teste, com a resposta
-   do `pix-202.json`, só pelo tempo do `with`, e apagado na saída; sem
-   `persistent`, para não gravar arquivo no volume dos mocks.
-4. *O que ela não faz:* não altera arquivo de mock nem a resposta de outra
-   chave.
+1. *Princípio da base tocado:* o mock responde fixo por chave Pix.
+2. *Por que não funciona sem:* nenhum mock falha e depois aceita, e o
+   despacho tardio pela fila precisa ser provado.
+3. *A peça, e por que é a menor:* um mapeamento, para uma única chave de
+   despacho do teste, criado pela API de administração do mock e apagado
+   ao fim do teste.
+4. *O que ela não faz:* não altera arquivo de mock, não persiste e não
+   afeta outra chave.
+
 
 ## 10. Como subir o Ledger
 
