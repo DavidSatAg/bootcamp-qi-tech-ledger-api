@@ -1,0 +1,39 @@
+{
+  "title": "PostTransfersPayout",
+  "type": "object",
+  "properties": {
+    "source_account_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "amount_in_cents": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "destination": {
+      "type": "string",
+      "enum": ["pix"]
+    },
+    "period_reference": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 255
+    }
+  },
+  "required": [
+    "source_account_key",
+    "amount_in_cents",
+    "destination",
+    "period_reference",
+    "actor"
+  ],
+  "additionalProperties": false
+}

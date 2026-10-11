@@ -204,6 +204,11 @@ def create_app() -> FastAPI:
         transfer_resource.on_post_split,
         methods=["POST"],
     )
+    application.add_api_route(
+        "/transfers/payout",
+        transfer_resource.on_post_payout,
+        methods=["POST"],
+    )
 
     integrity_resource = IntegrityResource()
     application.add_api_route(

@@ -216,3 +216,23 @@ class PayloadGenerator:
             "period_end": period_end,
             "actor": actor,
         }
+
+    @staticmethod
+    def create_payout_payload(
+        source_account_key: str,
+        amount_in_cents: int = 450000,
+        destination: str = "pix",
+        period_reference: str = "2026-09",
+        actor: str = "erp-alfa",
+        reason: str = "repasse aluguel 09/2026",
+    ) -> dict:
+        """O repasse do caso do remodelagem/05: os 450000 da RENT da Ana
+        (2222…), por Pix, na competência de setembro."""
+        return {
+            "source_account_key": source_account_key,
+            "amount_in_cents": amount_in_cents,
+            "destination": destination,
+            "period_reference": period_reference,
+            "actor": actor,
+            "reason": reason,
+        }

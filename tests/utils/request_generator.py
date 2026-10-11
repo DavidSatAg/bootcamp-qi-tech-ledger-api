@@ -1,4 +1,7 @@
+import json
 from os import environ
+
+import requests
 
 from tests.utils.requisition import ClientRequisition, BaseConnectorResponse
 
@@ -182,3 +185,50 @@ class RequestGenerator:
         response = ClientRequisition.send("POST", "/statement/verify", payload=payload, headers={})
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_transfers_payout(payload: dict = None, idempotency_key: str = None) -> BaseConnectorResponse:
+        """O repasse. A `Idempotency-Key` só vai quando há chave."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = ClientRequisition.send(
+            "POST",
+            "/transfers/payout",
+            payload=payload,
+            headers=headers,
+        )
+
+        return response.response_status, response.response_json
+
+    @staticmethod
+    def GET_mock_requests(mock: str, url_path: str) -> list:
+        """O diário do mock (`party-mock` ou `provider-mock`), só das
+        chamadas a `url_path`: [(headers, corpo)], do mais novo ao mais velho.
+
+        Vai direto ao `/__admin/requests` do WireMock: o `ClientRequisition`
+        só monta a URL da API. Os nomes dos cabeçalhos saem em minúsculas, e
+        o corpo, lido como JSON (vazio vira None).
+        """
+        ports = {
+            "party-mock": environ.get("PARTY_MOCK_PORT", "8091"),
+            "provider-mock": environ.get("PROVIDER_MOCK_PORT", "8082"),
+        }
+        api_host = environ.get("SERVER_LOCALHOST", "0.0.0.0")
+        response = requests.get(f"http://{api_host}:{ports[mock]}/__admin/requests", timeout=5)
+        assert response.status_code == 200, response.text
+
+        logged_requests = []
+        for logged in response.json()["requests"]:
+            request = logged["request"]
+            if request["url"].split("?")[0] != url_path:
+                continue
+            headers = {name.lower(): value for name, value in request["headers"].items()}
+            body = None
+            if request.get("body"):
+                body = json.loads(request["body"])
+            logged_requests.append((headers, body))
+
+        return logged_requests
