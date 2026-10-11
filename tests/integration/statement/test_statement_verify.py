@@ -22,6 +22,21 @@ class TestStatementVerify:
         assert response["match"] is True
         assert response["issued_at"] == statement["created_at"]
 
+    def test_statement_verify_malformed_hash_returns_false(self):
+        """Um hash emitido, mas malformado (espaço à direita, maiúsculas), não
+        casa (decisão A4): só 64 hex minúsculos valem como hash."""
+        status, contract_ledger = ObjectGenerator.create_contract_ledger()
+        assert status == 201, contract_ledger
+        accounts = {account["purpose_code"]: account["ledger_account_key"] for account in contract_ledger["accounts"]}
+        status, statement, _payload = ObjectGenerator.create_statement(accounts["RENT"])
+        assert status == 201, statement
+
+        for content_hash in [statement["content_hash"] + "   ", statement["content_hash"].upper()]:
+            status, response = RequestGenerator.POST_statement_verify({"content_hash": content_hash})
+
+            assert status == 200, (content_hash, response)
+            assert response == {"match": False}, (content_hash, response)
+
     def test_statement_verify_unknown_hash_returns_false(self):
         for content_hash in [uuid4().hex * 2, "abc"]:
             status, response = RequestGenerator.POST_statement_verify({"content_hash": content_hash})

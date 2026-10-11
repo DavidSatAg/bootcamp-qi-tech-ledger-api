@@ -1,5 +1,6 @@
 import hashlib
 import inspect
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.exc import IntegrityError
@@ -30,6 +31,9 @@ SUCCESS_STATUS = 201
 # A UNIQUE(supersedes_statement_id) do database.sql não tem nome: este é o
 # que o Postgres dá a ela (RN-08).
 SUPERSEDES_CONSTRAINT = "statement_supersedes_statement_id_key"
+
+# O `content_hash` emitido: SHA-256 em hex minúsculo (RN-03, A2).
+CONTENT_HASH_PATTERN = re.compile("[0-9a-f]{64}")
 
 # Os instantes do texto do hash: UTC, microssegundos e `Z` (decisão A2).
 HASH_INSTANT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -113,7 +117,15 @@ class StatementController(BaseController):
 
     def verify(self, content_hash: str) -> dict:
         """Há extrato com esse hash? Sem escrita e sem trava (RN-11). Hash
-        malformado não é erro: só não casa (decisão A4)."""
+        malformado não é erro: só não casa (decisão A4).
+
+        Só 64 hex minúsculos (A2) chegam à consulta: a coluna é CHAR(64), e
+        o Postgres ignora espaço à direita ao comparar CHAR, então
+        "<hash>   " casaria com o hash emitido.
+        """
+        if CONTENT_HASH_PATTERN.fullmatch(content_hash) is None:
+            return StatementDTO.verification_to_dict(None)
+
         statement = self.statement_repository.find_by_hash(content_hash)
 
         return StatementDTO.verification_to_dict(statement)
