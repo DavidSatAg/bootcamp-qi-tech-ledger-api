@@ -256,3 +256,47 @@ CREATE TABLE provider_event(
     UNIQUE(provider_reference)
 );
 
+-- --- Suporte --------------------------------------------------------
+
+CREATE TABLE idempotency_record(
+    id                  SERIAL PRIMARY KEY,
+    client_key          CHAR(36) NOT NULL,
+    endpoint            VARCHAR(255) NOT NULL,
+    idempotency_key     VARCHAR(255) NOT NULL,
+    request_fingerprint CHAR(64) NOT NULL,          -- SHA-256 dos bytes crus
+    response_status     INTEGER NOT NULL,
+    response_keys       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    expires_at          TIMESTAMPTZ NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(client_key, endpoint, idempotency_key)
+);
+
+CREATE TABLE statement(
+    id                      SERIAL PRIMARY KEY,
+    statement_key           CHAR(36) NOT NULL,
+    ledger_account_id       INTEGER NOT NULL REFERENCES ledger_account(id),
+    period_start            TIMESTAMPTZ NOT NULL,
+    period_end              TIMESTAMPTZ NOT NULL,
+    previous_statement_id   INTEGER REFERENCES statement(id),
+    supersedes_statement_id INTEGER REFERENCES statement(id),
+    content_hash            CHAR(64) NOT NULL,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT(NOW()),
+    UNIQUE(statement_key),
+    UNIQUE(supersedes_statement_id)
+);
+
+
+-- --- Indices: so os das consultas que existem ------------------------
+
+CREATE INDEX ledger_entry_by_account     ON ledger_entry (ledger_account_id, id);
+CREATE INDEX ledger_entry_by_transaction ON ledger_entry (ledger_transaction_id);
+CREATE INDEX ledger_account_by_client    ON ledger_account (client_key, id);
+CREATE INDEX ledger_account_by_contract  ON ledger_account (contract_key) WHERE contract_key <> '';
+CREATE INDEX ledger_account_by_owner     ON ledger_account (owner_party_key) WHERE owner_party_key <> '';
+CREATE INDEX ledger_transaction_by_contract ON ledger_transaction (contract_key, period_reference, value_date);
+CREATE INDEX ledger_transaction_by_payer ON ledger_transaction (payer_party_key) WHERE payer_party_key <> '';
+CREATE INDEX outbox_by_status            ON outbox (outbox_status_id, id);
+CREATE INDEX statement_by_account        ON statement (ledger_account_id, created_at DESC, id DESC);
+-- uma divisao por contrato e competencia; 3 = 'split' pela ordem do seed
+CREATE UNIQUE INDEX one_split_per_period ON ledger_transaction (contract_key, period_reference)
+    WHERE ledger_transaction_type_id = 3;
