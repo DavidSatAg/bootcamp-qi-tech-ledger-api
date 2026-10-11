@@ -138,6 +138,14 @@ class TestInternalCreate:
             assert balance(contract_a["COLLECTION"]) == 640000
             assert balance(own_b) == own_b_before
 
+        # Gravado, não recalculado: a mesma chave com outro corpo é 010.
+        status, response, _payload = ObjectGenerator.create_internal(
+            contract_a["COLLECTION"], own_b, idempotency_key=idempotency_key, gross_amount_in_cents=40000
+        )
+
+        assert status == 409, response
+        assert response["code"] == "QIT001010"
+
     def test_transfers_internal_unknown_account_returns_404(self):
         """O 018 sai antes do motor e não grava (D-01): a mesma chave, com o
         destino que existe, chega ao motor e leva o 008, não o 010."""
