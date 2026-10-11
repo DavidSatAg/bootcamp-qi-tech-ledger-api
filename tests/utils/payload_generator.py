@@ -291,3 +291,24 @@ class PayloadGenerator:
             payload["reason"] = reason
 
         return payload
+
+    @staticmethod
+    def create_med_payload(
+        end_to_end_id: str,
+        amount_in_cents: int = 640000,
+        provider_reference: str = None,
+        value_date: str = "2026-09-06T10:00:00Z",
+    ) -> dict:
+        """O aviso de MED do provedor (01b :375-380): a entrada do
+        `end_to_end_id` devolvida, inteira por padrão. A referência padrão é
+        "PRV-" + `end_to_end_id` + "-MED", na forma da liquidação."""
+        if provider_reference is None:
+            provider_reference = "PRV-" + end_to_end_id + "-MED"
+
+        return {
+            "provider_reference": provider_reference,
+            "event_type": "med_return",
+            "end_to_end_id": end_to_end_id,
+            "amount_in_cents": amount_in_cents,
+            "value_date": value_date,
+        }

@@ -113,3 +113,8 @@ class LedgerTransactionRepository:
             .with_for_update()
             .one()
         )
+
+    def get_by_end_to_end_id(self, end_to_end_id: str) -> LedgerTransaction | None:
+        """A transação do `end_to_end_id` (a entrada Pix; UNIQUE): a que o
+        MED devolve (fatia 11 RN-09)."""
+        return self.session.query(LedgerTransaction).filter(LedgerTransaction.end_to_end_id == end_to_end_id).first()

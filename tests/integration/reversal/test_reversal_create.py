@@ -270,3 +270,32 @@ class TestReversalCreate:
         assert balance(keys["RENT"]) == 450000
         assert balance(cash_key()) - external_after_tx1 == -640000
         assert_book_closes()
+
+    def test_transfers_reversal_closed_account_refuses(self):
+        """Conta encerrada não aceita estorno: 012 no passo 2, gravado na
+        rota e não gravado no MED (RN-08; D1)."""
+        keys = provision_contract()
+        status, tx1, inflow_payload = ObjectGenerator.create_inflow(keys["contract_key"])
+        assert status == 201, tx1
+        tx1_key = tx1["ledger_transaction_key"]
+        reverse(tx1_key)
+        status, response = ObjectGenerator.close_contract_ledger(keys["contract_key"])
+        assert status == 200, response
+        payload = PayloadGenerator.create_reversal_payload()
+        idempotency_key = str(uuid4())
+
+        for _attempt in range(2):
+            status, response = RequestGenerator.POST_transfers_reversal(tx1_key, payload, idempotency_key=idempotency_key)
+
+            assert status == 409, response
+            assert response["code"] == "QIT001012"
+
+        med_payload = PayloadGenerator.create_med_payload(inflow_payload["end_to_end_id"])
+
+        for _attempt in range(2):
+            status, response = RequestGenerator.POST_webhooks_provider(med_payload)
+
+            assert status == 409, response
+            assert response["code"] == "QIT001012"
+
+        assert balance(keys["COLLECTION"]) == 0

@@ -201,3 +201,12 @@ class ObjectGenerator:
         )
 
         return status, response, reversal_payload
+
+    @staticmethod
+    def create_med_return(end_to_end_id: str, **kwargs) -> tuple:
+        """O MED da entrada do `end_to_end_id`, pelo webhook do provedor.
+        Devolve (status, corpo, payload) sem conferir o status."""
+        med_payload = PayloadGenerator.create_med_payload(end_to_end_id, **kwargs)
+        status, response = RequestGenerator.POST_webhooks_provider(med_payload)
+
+        return status, response, med_payload

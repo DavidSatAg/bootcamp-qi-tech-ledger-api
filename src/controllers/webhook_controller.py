@@ -4,7 +4,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
-from errors import InvalidSchema, LockTimeout, OutboxNotFound
+from controllers.reversal_controller import ReversalController
+from errors import InvalidSchema, LedgerTransactionNotFound, LockTimeout, OutboxNotFound
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, OutboxStatus, PurposeCode
 from repositories import (
     LedgerAccountRepository,
@@ -22,6 +23,9 @@ ENDPOINT = "POST /webhooks/provider"
 SUCCESS_STATUS = 204
 
 SETTLEMENT_FAILED = "settlement_failed"
+
+# O MED: a entrada Pix devolvida ao pagador, estornada (fatia 11; G :456).
+MED_RETURN = "med_return"
 
 # A outbox que o provedor ainda não recebeu: o aviso chegou antes da hora.
 NOT_SENT_STATUSES = (OutboxStatus.PENDING, OutboxStatus.IN_FLIGHT)
@@ -50,6 +54,10 @@ class WebhookController(BaseController):
         """Uma transação (RN-01): a data-valor, a outbox travada, o aviso
         guardado e, por fim, o motor, cujo commit é o desta requisição.
         Nada se lê do ORM depois dele."""
+        if payload["event_type"] == MED_RETURN:
+            self._med_return(payload, raw_body)
+            return
+
         value_date = self._value_date(payload)
         outbox = self._lock_outbox(payload["outbox_key"])
 
@@ -81,7 +89,7 @@ class WebhookController(BaseController):
             self.provider_event_repository.create(
                 provider_reference=payload["provider_reference"],
                 event_type=payload["event_type"],
-                outbox_id=outbox.id,
+                outbox_id=outbox.id if outbox is not None else None,
                 raw_payload=payload,
                 received_at=datetime.now(timezone.utc),
             )
@@ -92,6 +100,41 @@ class WebhookController(BaseController):
         savepoint.commit()
 
         return True
+
+    def _med_return(self, payload: dict, raw_body: bytes) -> None:
+        """O MED (fatia 11 RN-09): a data-valor, a entrada pelo
+        `end_to_end_id`, o aviso guardado sem outbox e o estorno pelo motor,
+        cujo commit é o desta requisição.
+
+        Sem a entrada não há livro que escope o registro: o 020 sai antes
+        do aviso e nada se grava (D-01). O erro do estorno também não fica
+        gravado: o provedor repete o mesmo aviso, e ele tem de rodar de novo
+        (S10 D-02)."""
+        value_date = self._value_date(payload)
+        original = self.ledger_transaction_repository.get_by_end_to_end_id(payload["end_to_end_id"])
+
+        if original is None:
+            raise LedgerTransactionNotFound()
+
+        # O mesmo `provider_reference` já guardado é o reenvio: 204 (S10 RN-03).
+        if not self._register_event(payload, None):
+            return
+
+        idempotency = {
+            "endpoint": ENDPOINT,
+            "key": payload["provider_reference"],
+            "raw_body": raw_body,
+        }
+        header = {
+            "value_date": value_date,
+            "actor": PROVIDER_ACTOR,
+            "reason": payload["event_type"],
+        }
+
+        reversal_controller = ReversalController()
+        reversal_controller.reverse(
+            original, payload["amount_in_cents"], idempotency, header, SUCCESS_STATUS, record_error=False
+        )
 
     def _settle(self, payload: dict, outbox, value_date: datetime, raw_body: bytes) -> None:
         """As pernas do repasse dizem de onde o dinheiro saiu e quanto
