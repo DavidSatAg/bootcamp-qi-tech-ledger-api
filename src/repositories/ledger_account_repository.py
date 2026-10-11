@@ -299,3 +299,27 @@ class LedgerAccountRepository:
         )
 
         return [ledger_account_id for (ledger_account_id,) in rows]
+
+    def lock_for_statement(self, ledger_account: LedgerAccount) -> datetime | None:
+        """Trava a linha da conta e devolve o corte do extrato (RN-06, A9).
+
+        O corte é o `clock_timestamp()` lido DEPOIS da trava: com o `NOW()`
+        do início da transação, quem esperou na trava teria um corte anterior
+        ao do extrato que esperou, e a cadeia poderia bifurcar. A espera vai
+        até o `lock_timeout`; estourou, devolve None.
+        """
+        try:
+            self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
+
+            (
+                self.session.query(LedgerAccount.id)
+                .filter(LedgerAccount.id == ledger_account.id)
+                .with_for_update()
+                .one()
+            )
+
+            return self.session.execute(select(func.clock_timestamp())).scalar()
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == "55P03":
+                return None
+            raise

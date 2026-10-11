@@ -201,3 +201,18 @@ class PayloadGenerator:
             payload["reason"] = reason
 
         return payload
+
+    @staticmethod
+    def create_statement_payload(
+        ledger_account_key: str,
+        period_start: str = "2026-09-01T00:00:00Z",
+        period_end: str = "2026-10-01T00:00:00Z",
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """O fechamento de setembro, a competência do TX1 (remodelagem/05)."""
+        return {
+            "ledger_account_key": ledger_account_key,
+            "period_start": period_start,
+            "period_end": period_end,
+            "actor": actor,
+        }

@@ -163,3 +163,15 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_statement(payload: dict, idempotency_key: str = None) -> BaseConnectorResponse:
+        """A emissão do extrato. A `Idempotency-Key` só vai quando há chave."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = ClientRequisition.send("POST", "/statement", payload=payload, headers=headers)
+
+        return response.response_status, response.response_json

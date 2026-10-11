@@ -1,4 +1,5 @@
 from sqlalchemy import CHAR, Column, DateTime, ForeignKey, Integer, UniqueConstraint, func
+from sqlalchemy.orm import relationship
 from models.base import Base
 from models import LedgerAccount
 
@@ -20,3 +21,5 @@ class Statement(Base):
         UniqueConstraint("statement_key"),
         UniqueConstraint("supersedes_statement_id"),
     )
+
+    ledger_account = relationship("LedgerAccount", foreign_keys=[ledger_account_id], lazy="selectin")

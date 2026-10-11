@@ -302,3 +302,19 @@ class StatementNotFound(QIException):
             description = f"Statement with key {statement_key} was not found."
         translation = "extrato inexistente"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class StatementPeriodAlreadyIssued(QIException):
+    code = "QIT001017"
+
+    def __init__(self, ledger_account_key=None, period_start=None, period_end=None) -> None:
+        title = "Statement period already issued"
+        http_status = 409
+        description = "The period already has a statement, or overlaps another one."
+        if ledger_account_key is not None:
+            description = (
+                f"Ledger account {ledger_account_key} already has a statement for "
+                f"{period_start} - {period_end}, or one that overlaps it."
+            )
+        translation = "período já tem extrato"
+        super().__init__(title, self.code, http_status, description, translation)

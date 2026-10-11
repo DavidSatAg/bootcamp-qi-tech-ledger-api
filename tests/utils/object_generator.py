@@ -71,3 +71,14 @@ class ObjectGenerator:
         status, response = RequestGenerator.POST_transfers_split(split_payload, idempotency_key=idempotency_key)
 
         return status, response, split_payload
+
+    @staticmethod
+    def create_statement(ledger_account_key: str, **kwargs) -> tuple:
+        """Emite o extrato da conta com uma `Idempotency-Key` nova.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        statement_payload = PayloadGenerator.create_statement_payload(ledger_account_key, **kwargs)
+        status, response = RequestGenerator.POST_statement(statement_payload, idempotency_key=str(uuid4()))
+
+        return status, response, statement_payload
