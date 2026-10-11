@@ -247,3 +247,34 @@ class TestPayoutPix:
             assert balance(clearing_key()) == clearing_before + 450000
             assert len(pix_dispatches(outbox["dispatch_idempotency_key"])) == 1
             assert trace(response["ledger_transaction_key"])["chain"][-1]["outbox_status"] == "pending"
+
+    def test_transfers_payout_replays_same_key(self):
+        rent = rent_key(ObjectGenerator.create_divided_contract(ANA))
+        idempotency_key = str(uuid4())
+
+        status_first, first, _payload = ObjectGenerator.create_payout(rent, idempotency_key=idempotency_key)
+        status_second, second, _payload = ObjectGenerator.create_payout(rent, idempotency_key=idempotency_key)
+
+        assert (status_first, status_second) == (202, 202), (first, second)
+        assert second["ledger_transaction_key"] == first["ledger_transaction_key"]
+        assert second["outbox"]["outbox_key"] == first["outbox"]["outbox_key"]
+        assert balance(rent) == 0
+        assert len(pix_dispatches(first["outbox"]["dispatch_idempotency_key"])) == 1
+
+    def test_transfers_payout_replay_skips_party(self):
+        """O replay não pergunta ao Cadastro: a resposta dele seria inútil, e
+        um Cadastro fora não pode trocar o 202 gravado por um 503 (RN-02)."""
+        rent = rent_key(ObjectGenerator.create_divided_contract(ANA))
+        idempotency_key = str(uuid4())
+
+        status, first, _payload = ObjectGenerator.create_payout(rent, idempotency_key=idempotency_key)
+
+        assert status == 202, first
+        party_reads = len(RequestGenerator.GET_mock_requests("party-mock", f"/parties/{ANA}"))
+
+        status, second, _payload = ObjectGenerator.create_payout(rent, idempotency_key=idempotency_key)
+
+        assert status == 202, second
+        assert second["ledger_transaction_key"] == first["ledger_transaction_key"]
+        assert len(RequestGenerator.GET_mock_requests("party-mock", f"/parties/{ANA}")) == party_reads
+        assert len(pix_dispatches(first["outbox"]["dispatch_idempotency_key"])) == 1

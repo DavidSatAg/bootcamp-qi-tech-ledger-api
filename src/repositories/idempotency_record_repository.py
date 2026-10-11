@@ -42,6 +42,19 @@ class IdempotencyRecordRepository:
 
         self.session.flush()
 
+    def get(self, client_key: str, endpoint: str, idempotency_key: str) -> IdempotencyRecord:
+        """O registro da chave, ou None, sem trava: só uma espiada antes da
+        chamada externa (fatia 09, RN-02). Quem decide é o INSERT do motor."""
+        return (
+            self.session.query(IdempotencyRecord)
+            .filter(
+                IdempotencyRecord.client_key == client_key,
+                IdempotencyRecord.endpoint == endpoint,
+                IdempotencyRecord.idempotency_key == idempotency_key,
+            )
+            .first()
+        )
+
     def get_for_update(self, client_key: str, endpoint: str, idempotency_key: str) -> IdempotencyRecord:
         """O registro que colidiu, travado até o fim da transação: quem chega
         com a mesma chave espera aqui, e não lê uma resposta pela metade."""

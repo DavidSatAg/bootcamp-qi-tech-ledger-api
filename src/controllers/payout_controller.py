@@ -7,7 +7,12 @@ from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO, OutboxDTO
 from errors import LedgerAccountNotFound, OwnerNotActive, OwnerWithoutPixKey, PartyServiceUnavailable
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
-from repositories import LedgerAccountRepository, LedgerTransactionRepository, OutboxRepository
+from repositories import (
+    IdempotencyRecordRepository,
+    LedgerAccountRepository,
+    LedgerTransactionRepository,
+    OutboxRepository,
+)
 from utils.request_context import get_request_id
 
 ENDPOINT = "POST /transfers/payout"
@@ -32,6 +37,7 @@ class PayoutController(BaseController):
         self.ledger_account_repository = LedgerAccountRepository(self.context)
         self.ledger_transaction_repository = LedgerTransactionRepository(self.context)
         self.outbox_repository = OutboxRepository(self.context)
+        self.idempotency_record_repository = IdempotencyRecordRepository(self.context)
         self.party_connector = PartyConnector()
         # O 038/039 do Cadastro, lido antes do BEGIN e levantado pelo
         # `after_lock`, depois do passo 1: gravado na chave (D1).
@@ -51,12 +57,14 @@ class PayoutController(BaseController):
         owner_party_key = source.owner_party_key
         client_key = source.client_key
         contract_key = source.contract_key
+        replay = self._is_replay(client_key, idempotency_key)
 
         # Fecha a leitura antes do Cadastro, sem escrita (D2).
         self.session.commit()
 
-        # Conta sem dono não tem par para a TRANSIT: o motor dá o 008.
-        if owner_party_key != "":
+        # Conta sem dono não tem par para a TRANSIT: o motor dá o 008. No
+        # replay, o motor responde o que gravou, e o Cadastro seria inútil.
+        if owner_party_key != "" and not replay:
             self.owner_error = self._check_owner(owner_party_key)
 
         # A `clearing/TRANSIT` do cliente existe sempre (G:375-377). As contas
@@ -132,6 +140,17 @@ class PayoutController(BaseController):
             reason=payload.get("reason"),
             trace_id=get_request_id(),
         )
+
+    def _is_replay(self, client_key: str, idempotency_key: str) -> bool:
+        """Se a chave já tem registro vivo, com qualquer impressão (RN-02):
+        aí o motor responde o replay ou o 010 antes do `after_lock`, e o
+        Cadastro não pode trocar essa resposta por um 503 ou um 038."""
+        idempotency_record = self.idempotency_record_repository.get(client_key, ENDPOINT, idempotency_key)
+
+        if idempotency_record is None:
+            return False
+
+        return idempotency_record.expires_at > datetime.now(timezone.utc)
 
     def _check_owner(self, owner_party_key: str):
         """O dono no Cadastro, sem transação aberta (RN-03; 01b :162-167).
