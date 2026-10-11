@@ -124,6 +124,35 @@ class LedgerAccountRepository:
 
         return ledger_account
 
+    def change_status(
+        self,
+        ledger_account: LedgerAccount,
+        status_enumerator: str,
+        actor: str,
+        reason: str,
+        trace_id: str,
+    ) -> LedgerAccount:
+        """Leva a conta ao novo status, com o evento atual -> novo.
+
+        O `flush` manda o UPDATE e o INSERT agora, sem commit.
+        """
+        new_status = self.get_status(status_enumerator)
+
+        status_event = LedgerAccountStatusEvent()
+        status_event.from_status = ledger_account.ledger_account_status
+        status_event.to_status = new_status
+        status_event.actor = actor
+        status_event.reason = reason
+        status_event.trace_id = trace_id
+        status_event.event_datetime = datetime.now(timezone.utc)
+
+        ledger_account.ledger_account_status = new_status
+        ledger_account.status_events.append(status_event)
+
+        self.session.flush()
+
+        return ledger_account
+
     def list_page(self, limit: int, offset: int, filters: dict) -> list:
         """A página, estreitada pelo filtro que veio (o schema garante um só).
 

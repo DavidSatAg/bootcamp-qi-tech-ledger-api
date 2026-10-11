@@ -11,6 +11,29 @@ def contract_statuses(contract_key: str) -> list:
     return [account["status"] for account in response["data"]]
 
 
+def keys_by_purpose(contract_ledger: dict) -> dict:
+    keys = dict()
+    for account in contract_ledger["accounts"]:
+        keys[account["purpose_code"]] = account["ledger_account_key"]
+
+    return keys
+
+
+def account_of(ledger_account_key: str) -> dict:
+    status, response = RequestGenerator.GET_ledger_account(ledger_account_key)
+    assert status == 200
+
+    return response
+
+
+def event_statuses(ledger_account: dict) -> list:
+    """Os status da trilha, como multiconjunto: os eventos saem sem ordem."""
+    return sorted(status_event["status"] for status_event in ledger_account["status_events"])
+
+
+CONTRACT_PURPOSES = ["COLLECTION", "RENT", "IPTU", "CONDO", "WATER", "ELECTRICITY"]
+
+
 class TestContractLedgerClosure:
     def test_contract_ledgers_closure_unknown_contract_returns_404(self):
         status, response = ObjectGenerator.close_contract_ledger(str(uuid4()))
@@ -42,3 +65,34 @@ class TestContractLedgerClosure:
             assert response["code"] == "QIT000001"
 
         assert contract_statuses(contract_key) == ["active"] * 6
+
+    def test_contract_ledgers_closure_closes_contract_accounts(self):
+        status, contract_ledger = ObjectGenerator.create_contract_ledger()
+        assert status == 201
+        contract_key = contract_ledger["contract_key"]
+        keys = keys_by_purpose(contract_ledger)
+
+        status, response = ObjectGenerator.close_contract_ledger(contract_key)
+
+        assert status == 200
+        assert response == {"contract_key": contract_key, "closed_accounts": 6}
+        for purpose_code in CONTRACT_PURPOSES:
+            ledger_account = account_of(keys[purpose_code])
+            assert ledger_account["status"] == "closed", purpose_code
+            assert event_statuses(ledger_account) == ["active", "closed"], purpose_code
+        for purpose_code in ["OWN", "PLATFORM_FEE"]:
+            assert account_of(keys[purpose_code])["status"] == "active", purpose_code
+
+    def test_contract_ledgers_closure_is_idempotent(self):
+        status, contract_ledger = ObjectGenerator.create_contract_ledger()
+        assert status == 201
+        contract_key = contract_ledger["contract_key"]
+        status, first_response = ObjectGenerator.close_contract_ledger(contract_key)
+        assert status == 200
+
+        status, response = ObjectGenerator.close_contract_ledger(contract_key)
+
+        assert status == 200
+        assert response == first_response
+        rent = account_of(keys_by_purpose(contract_ledger)["RENT"])
+        assert event_statuses(rent) == ["active", "closed"]

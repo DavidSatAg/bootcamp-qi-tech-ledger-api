@@ -33,3 +33,12 @@ class ContractLedgerDTO:
             dto["accounts"].append(account_dto)
 
         return dto
+
+    @staticmethod
+    def closure_to_dict(contract_key: str, closed_accounts: int) -> dict:
+        """A resposta do encerramento, igual no primeiro fechamento e na repetição."""
+        dto = dict()
+        dto["contract_key"] = contract_key
+        dto["closed_accounts"] = closed_accounts
+
+        return dto

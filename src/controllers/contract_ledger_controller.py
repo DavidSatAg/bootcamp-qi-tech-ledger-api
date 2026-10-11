@@ -15,7 +15,7 @@ from errors import (
     SplitVersionOutOfSequence,
     UnknownPurposeCode,
 )
-from models import LedgerAccount, LedgerAccountType, PurposeCode, SplitSnapshot
+from models import LedgerAccount, LedgerAccountStatus, LedgerAccountType, PurposeCode, SplitSnapshot
 from repositories import LedgerAccountRepository, PurposeRuleRepository, SplitSnapshotRepository
 from utils.request_context import get_request_id
 
@@ -126,6 +126,9 @@ class ContractLedgerController(BaseController):
         A trava vem primeiro: é a primeira leitura das contas nesta
         requisição, e a que vê o status de quem commitou antes. Estourou o
         `lock_timeout`: 011. Nenhuma conta com esse contrato: 035.
+
+        Conta já `closed` não ganha evento: a repetição devolve o mesmo
+        corpo sem escrever nada.
         """
         ledger_accounts = self.ledger_account_repository.lock_contract_accounts(contract_key)
         if ledger_accounts is None:
@@ -134,9 +137,20 @@ class ContractLedgerController(BaseController):
         if not ledger_accounts:
             raise ContractNotProvisioned(contract_key)
 
+        for ledger_account in ledger_accounts:
+            if ledger_account.ledger_account_status.enumerator != LedgerAccountStatus.CLOSED:
+                self.ledger_account_repository.change_status(
+                    ledger_account,
+                    LedgerAccountStatus.CLOSED,
+                    payload["actor"],
+                    payload.get("reason"),
+                    get_request_id(),
+                )
+
+        closure_dto = ContractLedgerDTO.closure_to_dict(contract_key, len(ledger_accounts))
         self.session.commit()
 
-        return dict()
+        return closure_dto
 
     def _check_split(self, payload: dict) -> None:
         """As conferências que vêm antes de qualquer escrita, nesta ordem
