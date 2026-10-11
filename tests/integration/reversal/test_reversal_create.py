@@ -32,6 +32,28 @@ def inflow(contract_key: str, **kwargs) -> dict:
     return response
 
 
+def trace(ledger_transaction_key: str) -> dict:
+    status, response = RequestGenerator.GET_transfer_trace(ledger_transaction_key)
+    assert status == 200, response
+
+    return response
+
+
+def legs(entries: list) -> list:
+    """As pernas do trace como (direção, tipo da conta, propósito, valor)."""
+    return [
+        (entry["direction"], entry["ledger_account_type"], entry["purpose_code"], entry["amount_in_cents"])
+        for entry in entries
+    ]
+
+
+def reverse(ledger_transaction_key: str, **kwargs) -> dict:
+    status, response, _payload = ObjectGenerator.create_reversal(ledger_transaction_key, **kwargs)
+    assert status == 201, response
+
+    return response
+
+
 class TestReversalCreate:
     def test_transfers_reversal_unknown_transaction_returns_404(self):
         payload = PayloadGenerator.create_reversal_payload()
@@ -69,3 +91,39 @@ class TestReversalCreate:
             assert response["code"] == "QIT000001", (payload, idempotency_key, response)
 
         assert balance(keys["COLLECTION"]) == 640000
+
+    def test_transfers_reversal_ignores_purpose_rule(self):
+        """Não há par COLLECTION → CASH na `purpose_rule` (G :117-138): o
+        estorno não a consulta (G :354)."""
+        keys = provision_contract()
+        tx1 = inflow(keys["contract_key"])
+
+        response = reverse(tx1["ledger_transaction_key"])
+
+        assert response["ledger_transaction_type"] == "reversal"
+        assert response["reverses_transaction_key"] == tx1["ledger_transaction_key"]
+        assert legs(trace(response["ledger_transaction_key"])["entries"]) == [
+            ("D", "earmark", "COLLECTION", 640000),
+            ("C", "external", "CASH", 640000),
+        ]
+        assert balance(keys["COLLECTION"]) == 0
+
+    def test_transfers_reversal_key_scoped_by_original(self):
+        """A mesma chave e o mesmo corpo em originais diferentes são dois
+        estornos: o escopo tem a chave da original (RN-02, D3)."""
+        keys_a = provision_contract()
+        keys_b = provision_contract()
+        tx1_a = inflow(keys_a["contract_key"])
+        tx1_b = inflow(keys_b["contract_key"])
+        idempotency_key = str(uuid4())
+
+        reversal_a = reverse(tx1_a["ledger_transaction_key"], idempotency_key=idempotency_key)
+        reversal_b = reverse(tx1_b["ledger_transaction_key"], idempotency_key=idempotency_key)
+        replay_a = reverse(tx1_a["ledger_transaction_key"], idempotency_key=idempotency_key)
+
+        assert reversal_b["ledger_transaction_key"] != reversal_a["ledger_transaction_key"]
+        assert replay_a["ledger_transaction_key"] == reversal_a["ledger_transaction_key"]
+        assert replay_a["reverses_transaction_key"] == tx1_a["ledger_transaction_key"]
+        assert reversal_b["reverses_transaction_key"] == tx1_b["ledger_transaction_key"]
+        assert balance(keys_a["COLLECTION"]) == 0
+        assert balance(keys_b["COLLECTION"]) == 0

@@ -32,6 +32,7 @@ class LedgerTransactionRepository:
         ledger_transaction.actor = transaction["actor"]
         ledger_transaction.reason = transaction.get("reason")
         ledger_transaction.trace_id = trace_id
+        ledger_transaction.reverses_transaction_id = transaction.get("reverses_transaction_id")
 
         self.session.add(ledger_transaction)
         self.session.flush()
