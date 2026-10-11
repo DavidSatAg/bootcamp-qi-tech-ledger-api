@@ -1,0 +1,23 @@
+{
+  "title": "PostTransfersReversal",
+  "type": "object",
+  "properties": {
+    "amount_in_cents": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 255
+    }
+  },
+  "required": [
+    "actor"
+  ],
+  "additionalProperties": false
+}

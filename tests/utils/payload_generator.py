@@ -277,3 +277,17 @@ class PayloadGenerator:
             "outbox_key": outbox_key,
             "value_date": value_date,
         }
+
+    @staticmethod
+    def create_reversal_payload(amount_in_cents: int = None, actor: str = "erp-alfa", reason: str = None) -> dict:
+        """O estorno de uma transação (RFC :151): total, sem valor. O valor
+        e o motivo ausentes ficam fora do corpo."""
+        payload = {"actor": actor}
+
+        if amount_in_cents is not None:
+            payload["amount_in_cents"] = amount_in_cents
+
+        if reason is not None:
+            payload["reason"] = reason
+
+        return payload

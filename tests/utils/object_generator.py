@@ -184,3 +184,20 @@ class ObjectGenerator:
         status, response = RequestGenerator.POST_webhooks_provider(webhook_payload)
 
         return status, response, webhook_payload
+
+    @staticmethod
+    def create_reversal(ledger_transaction_key: str, idempotency_key: str = None, **kwargs) -> tuple:
+        """O estorno da transação, com uma `Idempotency-Key` nova quando
+        nenhuma vem.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        if idempotency_key is None:
+            idempotency_key = str(uuid4())
+
+        reversal_payload = PayloadGenerator.create_reversal_payload(**kwargs)
+        status, response = RequestGenerator.POST_transfers_reversal(
+            ledger_transaction_key, reversal_payload, idempotency_key=idempotency_key
+        )
+
+        return status, response, reversal_payload

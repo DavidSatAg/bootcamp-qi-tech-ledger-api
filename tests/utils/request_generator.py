@@ -269,3 +269,22 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_transfers_reversal(
+        ledger_transaction_key: str, payload: dict = None, idempotency_key: str = None
+    ) -> BaseConnectorResponse:
+        """O estorno da transação. A `Idempotency-Key` só vai quando há chave."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = ClientRequisition.send(
+            "POST",
+            f"/transfers/{ledger_transaction_key}/reversal",
+            payload=payload,
+            headers=headers,
+        )
+
+        return response.response_status, response.response_json

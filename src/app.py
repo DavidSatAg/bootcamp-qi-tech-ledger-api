@@ -215,6 +215,11 @@ def create_app() -> FastAPI:
         transfer_resource.on_post_internal,
         methods=["POST"],
     )
+    application.add_api_route(
+        "/transfers/{ledger_transaction_key}/reversal",
+        transfer_resource.on_post_reversal,
+        methods=["POST"],
+    )
 
     integrity_resource = IntegrityResource()
     application.add_api_route(
