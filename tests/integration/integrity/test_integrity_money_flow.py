@@ -122,3 +122,52 @@ class TestIntegrityMoneyFlow:
         assert types == ["inflow", "payout", "payout", "settlement", "settlement", "split"], types
         payouts = [link for link in chain if link["ledger_transaction_type"] == "payout"]
         assert [link["outbox_status"] for link in payouts] == ["settled", "settled"], payouts
+
+    def test_integrity_money_flow_tx7_tx8_final_picture(self):
+        """O OWN é compartilhado pelo livro: a TX8 debita 45000 dele, e a
+        TX2 deste mesmo teste é que os pôs lá (+45000)."""
+        keys = provision_contract()
+        before = balances(keys)
+        book_before = integrity({"client_key": ALFA_CLIENT})
+        flow = run_tx1_to_tx6(keys)
+
+        status, response, _payload = ObjectGenerator.create_med_return(
+            flow["inflow_payload"]["end_to_end_id"], amount_in_cents=640000
+        )
+        assert status == 204, response
+
+        status, internal, _payload = ObjectGenerator.create_internal(keys["OWN"], keys["COLLECTION"])
+        assert status == 201, internal
+
+        after = balances(keys)
+        assert {name: after[name] - before[name] for name in BOOK_ACCOUNTS} == {
+            "CASH": -530000,
+            "TRANSIT": 0,
+            "OWN": 0,
+            "PLATFORM_FEE": 5000,
+        }
+        assert {name: after[name] for name in CONTRACT_ACCOUNTS} == {
+            "COLLECTION": -595000,
+            "RENT": 0,
+            "IPTU": 30000,
+            "CONDO": 0,
+            "WATER": 12000,
+            "ELECTRICITY": 18000,
+        }
+
+        book_after = integrity({"client_key": ALFA_CLIENT})
+        assert book_after["difference_in_cents"] == 0
+        assert book_after["negative_accounts"] == []
+        assert book_after["asset_in_cents"] - book_before["asset_in_cents"] == -530000
+        assert (
+            book_after["liability_in_cents"] - book_before["liability_in_cents"]
+            + book_after["equity_in_cents"] - book_before["equity_in_cents"]
+        ) == -530000
+        assert integrity()["difference_in_cents"] == 0
+
+        inflow_key = flow["inflow"]["ledger_transaction_key"]
+        chain = trace(inflow_key)["chain"]
+        reversals = [link for link in chain if link["ledger_transaction_type"] == "reversal"]
+        assert len(reversals) == 1, chain
+        assert reversals[0]["reverses_transaction_key"] == inflow_key
+        assert [link for link in chain if link["ledger_transaction_type"] == "internal"] == []
