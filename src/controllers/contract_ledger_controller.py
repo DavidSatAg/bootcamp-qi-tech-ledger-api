@@ -8,6 +8,7 @@ from dtos import ContractLedgerDTO
 from errors import (
     ContractNotProvisioned,
     InvalidSchema,
+    LedgerAccountHasBalance,
     LockTimeout,
     PurposePairNotAllowed,
     SplitDoesNotClose,
@@ -127,6 +128,9 @@ class ContractLedgerController(BaseController):
         requisição, e a que vê o status de quem commitou antes. Estourou o
         `lock_timeout`: 011. Nenhuma conta com esse contrato: 035.
 
+        O saldo de cada conta é somado depois da trava, e antes de qualquer
+        escrita: uma com saldo ≠ 0 é 037, e nenhuma fecha.
+
         Conta já `closed` não ganha evento: a repetição devolve o mesmo
         corpo sem escrever nada.
         """
@@ -136,6 +140,10 @@ class ContractLedgerController(BaseController):
 
         if not ledger_accounts:
             raise ContractNotProvisioned(contract_key)
+
+        for ledger_account in ledger_accounts:
+            if self.ledger_account_repository.get_balance(ledger_account) != 0:
+                raise LedgerAccountHasBalance()
 
         for ledger_account in ledger_accounts:
             if ledger_account.ledger_account_status.enumerator != LedgerAccountStatus.CLOSED:

@@ -267,3 +267,14 @@ class LedgerTransactionNotFound(QIException):
             description = f"Ledger transaction with key {ledger_transaction_key} was not found."
         translation = "transação inexistente"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class LedgerAccountHasBalance(QIException):
+    code = "QIT001037"
+
+    def __init__(self) -> None:
+        title = "Account has balance"
+        http_status = 409
+        description = "An account of this contract has non-zero balance."
+        translation = "conta com saldo não pode ser encerrada"
+        super().__init__(title, self.code, http_status, description, translation)

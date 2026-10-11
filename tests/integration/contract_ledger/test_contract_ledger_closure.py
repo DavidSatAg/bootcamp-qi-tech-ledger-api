@@ -96,3 +96,19 @@ class TestContractLedgerClosure:
         assert response == first_response
         rent = account_of(keys_by_purpose(contract_ledger)["RENT"])
         assert event_statuses(rent) == ["active", "closed"]
+
+    def test_contract_ledgers_closure_with_balance_closes_nothing(self):
+        status, contract_ledger = ObjectGenerator.create_contract_ledger()
+        assert status == 201
+        contract_key = contract_ledger["contract_key"]
+        keys = keys_by_purpose(contract_ledger)
+        status, _, _ = ObjectGenerator.create_inflow(contract_key, amount_in_cents=640000)
+        assert status == 201
+
+        status, response = ObjectGenerator.close_contract_ledger(contract_key)
+
+        assert status == 409
+        assert response["code"] == "QIT001037"
+        assert contract_statuses(contract_key) == ["active"] * 6
+        assert event_statuses(account_of(keys["RENT"])) == ["active"]
+        assert account_of(keys["COLLECTION"])["balance_in_cents"] == 640000
