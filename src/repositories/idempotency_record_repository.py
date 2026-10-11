@@ -41,3 +41,27 @@ class IdempotencyRecordRepository:
         idempotency_record.response_keys = response_keys
 
         self.session.flush()
+
+    def get_for_update(self, client_key: str, endpoint: str, idempotency_key: str) -> IdempotencyRecord:
+        """O registro que colidiu, travado até o fim da transação: quem chega
+        com a mesma chave espera aqui, e não lê uma resposta pela metade."""
+        return (
+            self.session.query(IdempotencyRecord)
+            .filter(
+                IdempotencyRecord.client_key == client_key,
+                IdempotencyRecord.endpoint == endpoint,
+                IdempotencyRecord.idempotency_key == idempotency_key,
+            )
+            .with_for_update()
+            .one()
+        )
+
+    def renew(self, idempotency_record: IdempotencyRecord, request_fingerprint: str, expires_at) -> None:
+        """A chave venceu: o registro passa a ser do pedido novo, com a
+        resposta provisória de novo (D0003 :54)."""
+        idempotency_record.request_fingerprint = request_fingerprint
+        idempotency_record.response_status = 0
+        idempotency_record.response_keys = []
+        idempotency_record.expires_at = expires_at
+
+        self.session.flush()

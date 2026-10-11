@@ -240,3 +240,14 @@ class TransactionDoesNotBalance(QIException):
         description = "The debits and credits of the transaction do not add up to zero in some book."
         translation = "a transação não fecha em zero em algum livro"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class IdempotencyKeyConflict(QIException):
+    code = "QIT001010"
+
+    def __init__(self) -> None:
+        title = "Idempotency key conflict"
+        http_status = 409
+        description = "The Idempotency-Key was already used with a different request body."
+        translation = "mesma chave de idempotência, corpo diferente"
+        super().__init__(title, self.code, http_status, description, translation)

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -121,3 +122,54 @@ class TestInflowPix:
 
             assert status == 400, (payload, response)
             assert response["code"] == "QIT000001"
+
+    def test_transfers_inflow_schema_failure_does_not_burn_key(self):
+        contract_key, collection_key = provision_contract()
+        idempotency_key = str(uuid4())
+
+        payload = PayloadGenerator.create_inflow_payload(contract_key, amount_in_cents=0)
+        status, response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+
+        assert status == 400, response
+        assert response["code"] == "QIT000001"
+
+        payload = PayloadGenerator.create_inflow_payload(contract_key)
+        status, response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+
+        assert status == 201, response
+        assert balance(collection_key) == 640000
+
+    def test_transfers_inflow_replays_same_key(self):
+        contract_key, collection_key = provision_contract()
+        payload = PayloadGenerator.create_inflow_payload(contract_key)
+        idempotency_key = payload["end_to_end_id"]
+
+        first_status, first_response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+        second_status, second_response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+
+        assert first_status == 201, first_response
+        assert second_status == 201, second_response
+        assert second_response == first_response
+        assert balance(collection_key) == 640000
+
+    def test_transfers_inflow_same_key_other_body_conflicts(self):
+        contract_key, collection_key = provision_contract()
+        payload = PayloadGenerator.create_inflow_payload(contract_key)
+        idempotency_key = payload["end_to_end_id"]
+        raw_body = json.dumps(payload).encode()
+
+        status, response = RequestGenerator.POST_transfers_inflow(idempotency_key=idempotency_key, raw_body=raw_body)
+        assert status == 201, response
+
+        other_amount = dict(payload, amount_in_cents=320000)
+        other_bodies = [json.dumps(other_amount).encode(), raw_body + b" "]
+
+        for other_body in other_bodies:
+            status, response = RequestGenerator.POST_transfers_inflow(
+                idempotency_key=idempotency_key, raw_body=other_body
+            )
+
+            assert status == 409, (other_body, response)
+            assert response["code"] == "QIT001010"
+
+        assert balance(collection_key) == 640000

@@ -1,12 +1,19 @@
 import hashlib
+import inspect
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import IntegrityError
+
+import errors
 from controllers.base_controller import BaseController
 from errors import (
     CurrencyMismatch,
+    IdempotencyKeyConflict,
+    InternalError,
     InvalidSchema,
     LedgerAccountNotMovable,
     PurposePairNotAllowed,
+    QIException,
     TransactionDoesNotBalance,
 )
 from models import LedgerAccountStatus
@@ -69,7 +76,10 @@ class PostingController(BaseController):
         `purpose_pairs` = [(origem, destino)], contas a conferir na
         `purpose_rule`. O commit é a última linha.
         """
-        idempotency_record = self._register_idempotency_key(idempotency)
+        idempotency_record, replayed_key = self._register_idempotency_key(idempotency)
+
+        if replayed_key is not None:
+            return replayed_key
 
         self._check_accounts(legs)
         self._check_purpose_pairs(purpose_pairs)
@@ -84,20 +94,74 @@ class PostingController(BaseController):
 
         return ledger_transaction.ledger_transaction_key
 
-    def _register_idempotency_key(self, idempotency: dict):
-        """Passo 1: SAVEPOINT + INSERT do registro, com a resposta provisória."""
-        savepoint = self.session.begin_nested()
+    def _register_idempotency_key(self, idempotency: dict) -> tuple:
+        """Passo 1 (D0003 :56-60): SAVEPOINT + INSERT do registro, com a
+        resposta provisória. Devolve (registro, None) para seguir, ou
+        (None, chave guardada) no replay de sucesso.
 
-        idempotency_record = self.idempotency_record_repository.create(
-            client_key=idempotency["client_key"],
-            endpoint=idempotency["endpoint"],
-            idempotency_key=idempotency["key"],
-            request_fingerprint=hashlib.sha256(idempotency["raw_body"]).hexdigest(),
-            expires_at=datetime.now(timezone.utc) + IDEMPOTENCY_TTL,
-        )
+        A colisão é a UNIQUE do escopo: desfaz-se só o SAVEPOINT, e o
+        registro que já existia é lido com trava. Quem chegou junto com a
+        mesma chave esperou no INSERT até a outra transação commitar.
+        """
+        request_fingerprint = hashlib.sha256(idempotency["raw_body"]).hexdigest()
+        expires_at = datetime.now(timezone.utc) + IDEMPOTENCY_TTL
+
+        savepoint = self.session.begin_nested()
+        try:
+            idempotency_record = self.idempotency_record_repository.create(
+                client_key=idempotency["client_key"],
+                endpoint=idempotency["endpoint"],
+                idempotency_key=idempotency["key"],
+                request_fingerprint=request_fingerprint,
+                expires_at=expires_at,
+            )
+        except IntegrityError:
+            savepoint.rollback()
+            return self._collide(idempotency, request_fingerprint, expires_at)
+
         savepoint.commit()
 
-        return idempotency_record
+        return idempotency_record, None
+
+    def _collide(self, idempotency: dict, request_fingerprint: str, expires_at: datetime) -> tuple:
+        """A chave já existe: vencida, segue como nova; outra impressão, 010;
+        a mesma, replay da resposta guardada (D0003 :52-54)."""
+        idempotency_record = self.idempotency_record_repository.get_for_update(
+            idempotency["client_key"], idempotency["endpoint"], idempotency["key"]
+        )
+
+        if idempotency_record.expires_at <= datetime.now(timezone.utc):
+            self.idempotency_record_repository.renew(idempotency_record, request_fingerprint, expires_at)
+            return idempotency_record, None
+
+        if idempotency_record.request_fingerprint != request_fingerprint:
+            raise IdempotencyKeyConflict()
+
+        if 200 <= idempotency_record.response_status < 300:
+            return None, idempotency_record.response_keys[0]
+
+        raise self._stored_error(idempotency_record)
+
+    def _stored_error(self, idempotency_record) -> QIException:
+        """O erro guardado, de novo: a classe com o `code` guardado, criada
+        sem argumentos (RN-13), achada como no `error_verification`. Sai a
+        `description` genérica: o corpo só repete igual nos erros de texto fixo.
+        """
+        code = idempotency_record.response_keys[0]
+
+        for _class_name, error_class in inspect.getmembers(errors, inspect.isclass):
+            if issubclass(error_class, QIException) and error_class is not QIException and error_class.code == code:
+                return error_class()
+
+        # Inalcançável: todo `code` gravado vem de uma classe de `errors`.
+        internal_error = InternalError()
+        return QIException(
+            internal_error.title,
+            code,
+            idempotency_record.response_status,
+            internal_error.description,
+            internal_error.translation,
+        )
 
     def _check_accounts(self, legs: list) -> None:
         """Passo 2: toda conta das pernas aceita movimento, numa moeda só.
