@@ -153,6 +153,44 @@ class TestInternalAllocations:
 
         assert balance(keys["COLLECTION"]) == 239996
 
+    def test_transfers_internal_sum_differs_returns_400(self):
+        """CU-J5: sem `remainder`, a soma nominal tem de ser o bruto. O 400
+        não grava: a mesma chave serve depois (D0003 :62-63)."""
+        keys = collected_contract()
+        idempotency_key = str(uuid4())
+
+        status, response, _payload = ObjectGenerator.create_internal_allocations(
+            keys["COLLECTION"],
+            [fixed(30000, keys["IPTU"]), percentage("10.0000", keys["OWN"])],
+            idempotency_key=idempotency_key,
+        )
+
+        assert status == 400, response
+        assert response["code"] == "QIT000001"
+        assert balance(keys["COLLECTION"]) == 640000
+
+        status, response, _payload = ObjectGenerator.create_internal_allocations(
+            keys["COLLECTION"],
+            [percentage("90.0000", keys["RENT"]), percentage("10.0000", keys["OWN"])],
+            idempotency_key=idempotency_key,
+        )
+
+        assert status == 201, response
+
+    def test_transfers_internal_allocations_exceed_gross_returns_400(self):
+        """CU-J7: com `remainder`, fixos e percentuais não passam do bruto."""
+        keys = collected_contract()
+
+        status, response, _payload = ObjectGenerator.create_internal_allocations(
+            keys["COLLECTION"],
+            [fixed(30000, keys["IPTU"]), percentage("10.0000", keys["OWN"]), remainder(keys["RENT"])],
+            gross_amount_in_cents=30000,
+        )
+
+        assert status == 400, response
+        assert response["code"] == "QIT000001"
+        assert balance(keys["COLLECTION"]) == 640000
+
     def test_transfers_internal_refuses_malformed_allocations(self):
         """CU-J6 e J8 e o formato de cada tipo: o schema recusa, 400."""
         keys = provision_contract()

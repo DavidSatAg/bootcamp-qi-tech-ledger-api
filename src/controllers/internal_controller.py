@@ -25,9 +25,11 @@ class InternalController(BaseController):
         self.ledger_transaction_repository = LedgerTransactionRepository(self.context)
 
     def create(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
-        """Confere a chave, acha a origem, cada destino e a data-valor, nesta
-        ordem (15b RN-01), rateia o bruto e entrega as pernas ao motor."""
+        """Confere a chave e as somas, acha a origem, cada destino e a
+        data-valor, nesta ordem (15b RN-01), rateia o bruto e entrega as
+        pernas ao motor."""
         PostingController.require_idempotency_key(idempotency_key)
+        self._check_sums(payload["gross_amount_in_cents"], payload["allocations"])
         source = self._find_account(payload["source_account_key"])
         targets = self._find_targets(payload["allocations"])
         value_date = self._value_date(payload)
@@ -94,6 +96,29 @@ class InternalController(BaseController):
         """Cada destino, na ordem do array: o primeiro inexistente é o 018,
         antes do motor e sem gravar (15b RN-01; S15a D-01)."""
         return [self._find_account(allocation["target_account_key"]) for allocation in allocations]
+
+    @staticmethod
+    def _check_sums(gross_amount_in_cents: int, allocations: list) -> None:
+        """As alocações fecham o bruto, somadas em `Decimal` pelo nominal
+        (15b RN-03; D0013 :77-78): sem `remainder`, a soma é o bruto; com
+        ela, não passa dele (igual, a `remainder` vale 0). Pedido malformado,
+        400, antes do banco e sem gravar, como o `value_date` impossível."""
+        nominal_sum = Decimal(0)
+        has_remainder = False
+
+        for allocation in allocations:
+            if allocation["type"] == "remainder":
+                has_remainder = True
+            elif allocation["type"] == "fixed":
+                nominal_sum = nominal_sum + allocation["value"]
+            else:
+                nominal_sum = nominal_sum + Decimal(gross_amount_in_cents) * Decimal(allocation["value"]) / 100
+
+        if not has_remainder and nominal_sum != gross_amount_in_cents:
+            raise InvalidSchema(f"allocations add up to {nominal_sum}, not to gross_amount_in_cents")
+
+        if has_remainder and nominal_sum > gross_amount_in_cents:
+            raise InvalidSchema(f"allocations add up to {nominal_sum}, more than gross_amount_in_cents")
 
     @staticmethod
     def _allocate(gross_amount_in_cents: int, allocations: list) -> tuple:
