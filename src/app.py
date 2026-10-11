@@ -12,6 +12,7 @@ from middlewares import (
 from resources import HealthCheckResource, SampleEntityResource
 from resources import LedgerAccountResource
 from resources import ContractLedgerResource
+from resources import TransferResource
 from utils.logger import setup_logging
 
 
@@ -178,6 +179,13 @@ def create_app() -> FastAPI:
         "/ledger_accounts",
         ledger_account_resource.on_get_list,
         methods=["GET"],
+    )
+
+    transfer_resource = TransferResource()
+    application.add_api_route(
+        "/transfers/inflow",
+        transfer_resource.on_post_inflow,
+        methods=["POST"],
     )
 
     register_error_handlers(application)

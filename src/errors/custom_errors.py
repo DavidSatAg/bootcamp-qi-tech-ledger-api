@@ -168,3 +168,16 @@ class SplitDoesNotClose(QIException):
         description = f"The split does not close: {reason}."
         translation = "split não fecha: percentuais ≥ 100%, ou taxa da plataforma > taxa de administração"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class ContractNotProvisioned(QIException):
+    code = "QIT001035"
+
+    def __init__(self, contract_key=None) -> None:
+        title = "Contract not provisioned"
+        http_status = 404
+        description = "The contract is not provisioned in the ledger."
+        if contract_key is not None:
+            description = f"The contract {contract_key} is not provisioned in the ledger."
+        translation = "contrato não provisionado"
+        super().__init__(title, self.code, http_status, description, translation)

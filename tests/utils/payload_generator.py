@@ -137,3 +137,37 @@ class PayloadGenerator:
         }
 
         return payload
+
+    @staticmethod
+    def create_inflow_payload(
+        contract_key: str,
+        amount_in_cents: int = 640000,
+        period_reference: str = "2026-09",
+        payer_party_key: str = "33333333-3333-4333-8333-333333333333",
+        end_to_end_id: str = None,
+        value_date: str = None,
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """A entrada por Pix do caso do remodelagem/05 (TX1): o aluguel de
+        setembro pago pelo Carlos (3333…) no contrato pedido.
+
+        O `end_to_end_id` é o do exemplo com 11 caracteres aleatórios no
+        fim: ele é único no ledger, e cada entrada precisa do seu.
+        `value_date` ausente fica fora do corpo: o ledger usa o agora.
+        """
+        if end_to_end_id is None:
+            end_to_end_id = "E00000000202609051422" + uuid4().hex[:11]
+
+        payload = {
+            "amount_in_cents": amount_in_cents,
+            "contract_key": contract_key,
+            "period_reference": period_reference,
+            "payer_party_key": payer_party_key,
+            "end_to_end_id": end_to_end_id,
+            "actor": actor,
+        }
+
+        if value_date is not None:
+            payload["value_date"] = value_date
+
+        return payload

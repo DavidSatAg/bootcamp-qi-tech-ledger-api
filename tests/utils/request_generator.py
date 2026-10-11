@@ -81,3 +81,29 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_transfers_inflow(payload: dict = None, idempotency_key: str = None, raw_body: bytes = None) -> BaseConnectorResponse:
+        """A entrada por Pix. A `Idempotency-Key` só vai quando há chave.
+
+        `raw_body` manda os bytes exatos, no lugar do `payload`: é assim que
+        um teste prova que um espaço a mais já é outro pedido. Vai com o
+        `Content-Type` de JSON, que o `json=` põe sozinho e o `data=` não.
+        """
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        if raw_body is not None:
+            headers["Content-Type"] = "application/json"
+
+        response = ClientRequisition.send(
+            "POST",
+            "/transfers/inflow",
+            payload=payload,
+            headers=headers,
+            data=raw_body,
+        )
+
+        return response.response_status, response.response_json

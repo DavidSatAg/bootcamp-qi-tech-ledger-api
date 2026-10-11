@@ -33,3 +33,17 @@ class ObjectGenerator:
         """
         contract_ledger_payload = PayloadGenerator.create_contract_ledger_payload(**kwargs)
         return RequestGenerator.POST_contract_ledgers(contract_ledger_payload)
+
+    @staticmethod
+    def create_inflow(contract_key: str, **kwargs) -> tuple:
+        """Uma entrada por Pix no contrato, com a `Idempotency-Key` igual ao
+        `end_to_end_id`, como o ERP manda (01b §0.5).
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        inflow_payload = PayloadGenerator.create_inflow_payload(contract_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_inflow(
+            inflow_payload, idempotency_key=inflow_payload["end_to_end_id"]
+        )
+
+        return status, response, inflow_payload

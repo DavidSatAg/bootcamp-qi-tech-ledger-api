@@ -153,3 +153,16 @@ class LedgerAccountRepository:
 
     def get_purpose_code(self, enumerator: str) -> PurposeCode:
         return self.session.query(PurposeCode).filter(PurposeCode.enumerator == enumerator).first()
+
+    def find_contract_account(self, contract_key: str, purpose_code: str) -> LedgerAccount:
+        """A conta do contrato com esse propósito (a COLLECTION, na entrada),
+        ou None se o contrato não foi provisionado."""
+        return (
+            self.session.query(LedgerAccount)
+            .join(LedgerAccount.purpose_code)
+            .filter(
+                LedgerAccount.contract_key == contract_key,
+                PurposeCode.enumerator == purpose_code,
+            )
+            .first()
+        )
