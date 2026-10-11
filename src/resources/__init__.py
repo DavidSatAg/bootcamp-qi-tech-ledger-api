@@ -6,3 +6,4 @@ from resources.transfer import TransferResource
 from resources.integrity import IntegrityResource
 from resources.statement import StatementResource
 from resources.webhook import WebhookResource
+from resources.wallet import WalletResource

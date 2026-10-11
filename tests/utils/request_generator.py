@@ -288,3 +288,16 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_wallets(payload: dict = None) -> BaseConnectorResponse:
+        """A abertura da carteira. Sem `Idempotency-Key`: não move dinheiro,
+        e repetir devolve a mesma conta (RFC :107-110, :146)."""
+        response = ClientRequisition.send(
+            "POST",
+            "/wallets",
+            payload=payload,
+            headers={"INTERNAL-TOKEN": INTERNAL_TOKEN},
+        )
+
+        return response.response_status, response.response_json

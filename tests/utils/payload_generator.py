@@ -312,3 +312,15 @@ class PayloadGenerator:
             "amount_in_cents": amount_in_cents,
             "value_date": value_date,
         }
+
+    @staticmethod
+    def create_wallet_payload(
+        party_key: str = "22222222-2222-4222-8222-222222222222",
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """A abertura da carteira da Ana (2222…), que o Cadastro dá como
+        ativa (RFC :146)."""
+        return {
+            "party_key": party_key,
+            "actor": actor,
+        }

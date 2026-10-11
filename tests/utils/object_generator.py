@@ -210,3 +210,10 @@ class ObjectGenerator:
         status, response = RequestGenerator.POST_webhooks_provider(med_payload)
 
         return status, response, med_payload
+
+    @staticmethod
+    def open_wallet(party_key: str = "22222222-2222-4222-8222-222222222222") -> tuple:
+        """Abre (ou reencontra) a carteira da parte. Devolve (status, corpo)
+        sem conferir o status."""
+        wallet_payload = PayloadGenerator.create_wallet_payload(party_key=party_key)
+        return RequestGenerator.POST_wallets(wallet_payload)

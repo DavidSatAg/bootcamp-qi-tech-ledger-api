@@ -1,0 +1,20 @@
+{
+  "title": "PostWallets",
+  "type": "object",
+  "properties": {
+    "party_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  },
+  "required": [
+    "party_key",
+    "actor"
+  ],
+  "additionalProperties": false
+}

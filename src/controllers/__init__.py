@@ -12,3 +12,4 @@ from controllers.outbox_controller import OutboxController
 from controllers.internal_controller import InternalController
 from controllers.webhook_controller import WebhookController
 from controllers.reversal_controller import ReversalController
+from controllers.wallet_controller import WalletController
