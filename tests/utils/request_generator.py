@@ -73,3 +73,11 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def GET_ledger_accounts(params: dict = None) -> BaseConnectorResponse:
+        response = ClientRequisition.send(
+            "GET", "/ledger_accounts", headers={"INTERNAL-TOKEN": INTERNAL_TOKEN}, query_params=params
+        )
+
+        return response.response_status, response.response_json

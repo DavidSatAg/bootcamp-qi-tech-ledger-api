@@ -1,3 +1,5 @@
+from typing import List
+
 from models import LedgerAccount
 
 
@@ -45,3 +47,14 @@ class LedgerAccountDTO:
         dto["currency"] = ledger_account.currency
 
         return dto
+
+    @staticmethod
+    def list_obj_to_list_dict(ledger_accounts_list: List[LedgerAccount]) -> List[dict]:
+        """A listagem sai sem saldo e sem trilha: cada um custaria uma
+        consulta por conta da página."""
+        ledger_accounts_dict_list = []
+
+        for ledger_account in ledger_accounts_list:
+            ledger_accounts_dict_list.append(LedgerAccountDTO.obj_to_simplified_dict(ledger_account))
+
+        return ledger_accounts_dict_list

@@ -174,6 +174,12 @@ def create_app() -> FastAPI:
         methods=["POST"],
     )
 
+    application.add_api_route(
+        "/ledger_accounts",
+        ledger_account_resource.on_get_list,
+        methods=["GET"],
+    )
+
     register_error_handlers(application)
 
     return application

@@ -1,0 +1,44 @@
+{
+  "title": "GetLedgerAccounts",
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "string",
+      "pattern": "^(100|[1-9]?[0-9])$"
+    },
+    "page": {
+      "type": "string",
+      "pattern": "^[0-9]{1,9}$"
+    },
+    "client_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contract_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "owner_party_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "client_key"
+      ]
+    },
+    {
+      "required": [
+        "contract_key"
+      ]
+    },
+    {
+      "required": [
+        "owner_party_key"
+      ]
+    }
+  ],
+  "additionalProperties": false
+}

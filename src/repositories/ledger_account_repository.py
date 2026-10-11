@@ -120,6 +120,31 @@ class LedgerAccountRepository:
 
         return ledger_account
 
+    def list_page(self, limit: int, offset: int, filters: dict) -> list:
+        """A página, estreitada pelo filtro que veio (o schema garante um só).
+
+        Ordenada por `id`, que é a ordem dos índices por cliente: sem
+        ordem, `limit` e `offset` podem repetir ou pular linha entre
+        páginas. Pede um a mais que o limite para saber se há próxima.
+        """
+        query = self.session.query(LedgerAccount)
+
+        client_key = filters.get("client_key")
+        if client_key is not None:
+            query = query.filter(LedgerAccount.client_key == client_key)
+
+        contract_key = filters.get("contract_key")
+        if contract_key is not None:
+            query = query.filter(LedgerAccount.contract_key == contract_key)
+
+        owner_party_key = filters.get("owner_party_key")
+        if owner_party_key is not None:
+            query = query.filter(LedgerAccount.owner_party_key == owner_party_key)
+
+        query = query.order_by(LedgerAccount.id)
+
+        return query.limit(limit + 1).offset(offset).all()
+
     def get_type(self, enumerator: str) -> LedgerAccountType:
         return self.session.query(LedgerAccountType).filter(LedgerAccountType.enumerator == enumerator).one()
 
