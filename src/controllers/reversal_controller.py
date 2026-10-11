@@ -1,9 +1,12 @@
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import OperationalError
+
+from constants import LOCK_TIMEOUT
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import LedgerTransactionNotFound
+from errors import LedgerTransactionNotFound, LockTimeout, ReversalExceedsOriginal
 from models import LedgerEntry, LedgerTransactionType
 from repositories import LedgerEntryRepository, LedgerTransactionRepository
 
@@ -12,6 +15,10 @@ from repositories import LedgerEntryRepository, LedgerTransactionRepository
 SUCCESS_STATUS = 201
 
 INVERTED_DIRECTION = {LedgerEntry.DEBIT: LedgerEntry.CREDIT, LedgerEntry.CREDIT: LedgerEntry.DEBIT}
+
+# O SQLSTATE do Postgres para "lock_not_available": a trava não veio dentro
+# do lock_timeout.
+LOCK_NOT_AVAILABLE = "55P03"
 
 
 class ReversalController(BaseController):
@@ -79,7 +86,14 @@ class ReversalController(BaseController):
         contract_key = original.contract_key
         period_reference = original.period_reference
 
-        legs = self._inverted_legs(original_id, amount_in_cents)
+        original_entries = self.ledger_entry_repository.list_by_transactions([original_id])
+        original_debits = sum(
+            int(ledger_entry.amount_in_cents)
+            for ledger_entry, _ledger_account in original_entries
+            if ledger_entry.direction == LedgerEntry.DEBIT
+        )
+        legs = self._inverted_legs(original_entries, amount_in_cents)
+        new_debits = sum(amount for _account, direction, amount in legs if direction == LedgerEntry.DEBIT)
 
         first_debit = next(ledger_account for ledger_account, direction, _amount in legs if direction == LedgerEntry.DEBIT)
         scope = dict(idempotency, client_key=first_debit.client_key)
@@ -98,15 +112,44 @@ class ReversalController(BaseController):
 
         # Sem pares: o estorno não consulta a `purpose_rule` (RN-06; G :354).
         posting_controller = PostingController()
-        return posting_controller.post(scope, transaction, legs, [], success_status, record_error=record_error)
+        return posting_controller.post(
+            scope,
+            transaction,
+            legs,
+            [],
+            success_status,
+            after_lock=lambda: self._check_remaining(original_id, original_debits, new_debits),
+            record_error=record_error,
+        )
 
-    def _inverted_legs(self, original_id: int, amount_in_cents: int | None) -> list:
-        """As pernas da original, débitos primeiro e em `id`, cada uma com a
-        direção trocada; com `amount_in_cents`, todas com esse valor
-        (RN-02, RN-04a)."""
+    def _check_remaining(self, original_id: int, original_debits: int, new_debits: int) -> None:
+        """Passo 5, com as contas travadas: trava a linha da original e soma
+        os estornos dela DEPOIS da trava (RN-05; G :460-461). Quem esperou vê
+        o estorno de quem soltou (READ COMMITTED). Σ D vale para 2 ou 4
+        pernas.
+
+        O `55P03` vira o 011 aqui: passado adiante, o motor o trocaria pelo
+        InternalError."""
+        try:
+            self.ledger_transaction_repository.lock_for_update(original_id, LOCK_TIMEOUT)
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+                raise LockTimeout() from error
+            raise
+
+        reversed_debits = self.ledger_entry_repository.sum_reversal_debits(original_id)
+
+        if reversed_debits + new_debits > original_debits:
+            raise ReversalExceedsOriginal()
+
+    @staticmethod
+    def _inverted_legs(original_entries: list, amount_in_cents: int | None) -> list:
+        """As pernas da original (`list_by_transactions`: débitos primeiro, e
+        `id`), cada uma com a direção trocada; com `amount_in_cents`, todas
+        com esse valor (RN-02, RN-04a)."""
         legs = []
 
-        for ledger_entry, ledger_account in self.ledger_entry_repository.list_by_transactions([original_id]):
+        for ledger_entry, ledger_account in original_entries:
             leg_amount_in_cents = int(ledger_entry.amount_in_cents)
             if amount_in_cents is not None:
                 leg_amount_in_cents = amount_in_cents

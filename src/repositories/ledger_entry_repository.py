@@ -92,3 +92,18 @@ class LedgerEntryRepository:
         asset, liability, equity = query.one()
 
         return {"asset": int(asset), "liability": int(liability), "equity": int(equity)}
+
+    def sum_reversal_debits(self, ledger_transaction_id: int) -> int:
+        """Σ das pernas D dos estornos da transação, 0 se nenhum (fatia 11
+        RN-05). Sem trava: quem pergunta já segura a da original."""
+        total = (
+            self.session.query(func.coalesce(func.sum(LedgerEntry.amount_in_cents), 0))
+            .join(LedgerTransaction, LedgerEntry.ledger_transaction_id == LedgerTransaction.id)
+            .filter(
+                LedgerTransaction.reverses_transaction_id == ledger_transaction_id,
+                LedgerEntry.direction == LedgerEntry.DEBIT,
+            )
+            .scalar()
+        )
+
+        return int(total)

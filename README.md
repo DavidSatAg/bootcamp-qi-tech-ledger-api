@@ -790,6 +790,20 @@ nova: é um limite declarado.
 4. *O que ela não faz:* não reenvia, não tem backoff, não marca `dead` nem
    liquida, e não segura trava durante a chamada externa.
 
+### A trava da transação original no teste (`DbUtils.hold_transaction_lock`, fatia 11)
+
+1. *Princípio da base tocado:* "`db_utils` só zera, nunca monta cenário".
+2. *Por que não funciona sem:* a trava da original no estorno (G :460) só
+   seria exposta por HTTP num estorno sem conta travável (ex.: o de uma
+   liquidação), e só por sorteio; com a `COLLECTION` ordenando, nenhum
+   vermelho determinístico.
+3. *A peça, e por que é a menor:* o `hold_row_lock` sobre
+   `ledger_transaction`: trava **uma** linha, em conexão própria, pelo tempo
+   do `with`; o `ROLLBACK` a solta.
+4. *O que ela não faz:* não escreve (`INSERT`, `UPDATE`, `DELETE`), não
+   executa SQL livre, não lê dado para asserção, não monta cenário — o
+   cenário nasce por `POST`.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

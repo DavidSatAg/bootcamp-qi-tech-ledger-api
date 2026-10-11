@@ -375,3 +375,14 @@ class OutboxNotFound(QIException):
             description = f"Outbox with key {outbox_key} was not found."
         translation = "outbox inexistente"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class ReversalExceedsOriginal(QIException):
+    code = "QIT001015"
+
+    def __init__(self) -> None:
+        title = "Reversal exceeds original"
+        http_status = 422
+        description = "The reversals of the transaction would exceed the original amount."
+        translation = "estornos excederiam o original"
+        super().__init__(title, self.code, http_status, description, translation)

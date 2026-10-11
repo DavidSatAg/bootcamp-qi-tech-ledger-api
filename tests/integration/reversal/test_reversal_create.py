@@ -127,3 +127,36 @@ class TestReversalCreate:
         assert reversal_b["reverses_transaction_key"] == tx1_b["ledger_transaction_key"]
         assert balance(keys_a["COLLECTION"]) == 0
         assert balance(keys_b["COLLECTION"]) == 0
+
+    def test_transfers_reversal_partials_capped_by_original(self):
+        """Os parciais somam até a original e nem um centavo além (RN-05;
+        CU-F2–F4)."""
+        keys = provision_contract()
+        tx1 = inflow(keys["contract_key"])
+        tx1_key = tx1["ledger_transaction_key"]
+
+        first = reverse(tx1_key, amount_in_cents=450000)
+
+        assert legs(trace(first["ledger_transaction_key"])["entries"]) == [
+            ("D", "earmark", "COLLECTION", 450000),
+            ("C", "external", "CASH", 450000),
+        ]
+        reverse(tx1_key, amount_in_cents=80000)
+        payload = PayloadGenerator.create_reversal_payload(amount_in_cents=140000)
+        idempotency_key = str(uuid4())
+
+        for _attempt in range(2):
+            status, response = RequestGenerator.POST_transfers_reversal(
+                tx1_key, payload, idempotency_key=idempotency_key
+            )
+
+            assert status == 422, response
+            assert response["code"] == "QIT001015"
+
+        reverse(tx1_key, amount_in_cents=110000)
+
+        assert balance(keys["COLLECTION"]) == 0
+        chain = trace(tx1_key)["chain"]
+        reversals = [link for link in chain if link["ledger_transaction_type"] == "reversal"]
+        assert len(reversals) == 3
+        assert {link["reverses_transaction_key"] for link in reversals} == {tx1_key}

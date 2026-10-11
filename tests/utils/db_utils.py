@@ -173,3 +173,38 @@ class DbUtils:
                     transaction.rollback()
         finally:
             engine.dispose()
+
+    @staticmethod
+    @contextmanager
+    def hold_transaction_lock(ledger_transaction_key: str):
+        """Trava uma transação do ledger com `FOR UPDATE`, numa conexão
+        própria, pelo tempo do `with`; na saída, `ROLLBACK` solta a trava.
+
+        Peça acrescentada pelo Ledger (fatia 11), com as quatro linhas:
+        1. Princípio tocado: "`db_utils` só zera, nunca monta cenário".
+        2. Por que não funciona sem: a trava da original no estorno (G :460)
+           só seria exposta por HTTP num estorno sem conta travável (ex.: o
+           de uma liquidação), e só por sorteio; com a `COLLECTION`
+           ordenando, nenhum vermelho determinístico.
+        3. A peça, e por que é a menor: o `hold_row_lock` sobre
+           `ledger_transaction`: uma linha, em conexão própria, pelo `with`;
+           o `ROLLBACK` a solta.
+        4. O que não faz: não escreve (`INSERT`, `UPDATE`, `DELETE`), não
+           executa SQL livre, não lê dado para asserção, não monta cenário —
+           o cenário nasce por `POST`.
+        """
+        engine = create_engine(DbUtils.database_url())
+
+        try:
+            with engine.connect() as connection:
+                transaction = connection.begin()
+                try:
+                    connection.execute(
+                        text("SELECT id FROM ledger_transaction WHERE ledger_transaction_key = :k FOR UPDATE"),
+                        {"k": ledger_transaction_key},
+                    )
+                    yield
+                finally:
+                    transaction.rollback()
+        finally:
+            engine.dispose()

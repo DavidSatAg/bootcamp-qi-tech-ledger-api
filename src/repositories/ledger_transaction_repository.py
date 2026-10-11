@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from sqlalchemy import func
 from sqlalchemy.orm import aliased
 
 from database import Context
@@ -95,3 +96,20 @@ class LedgerTransactionRepository:
         )
 
         return self.session.query(query.exists()).scalar()
+
+    def lock_for_update(self, ledger_transaction_id: int, lock_timeout: str) -> None:
+        """Trava a linha da transação, esperando no máximo `lock_timeout`
+        (a original do estorno, fatia 11 RN-05; G :460; D0005 :46-50).
+
+        Como no `LedgerAccountRepository.lock_for_update`: o `set_config(...,
+        true)` é o `SET LOCAL`, e estourar o tempo sobe como está (`55P03`):
+        quem o traduz é o controller. A trava solta no commit ou no rollback.
+        """
+        self.session.query(func.set_config("lock_timeout", lock_timeout, True)).scalar()
+
+        (
+            self.session.query(LedgerTransaction.id)
+            .filter(LedgerTransaction.id == ledger_transaction_id)
+            .with_for_update()
+            .one()
+        )
