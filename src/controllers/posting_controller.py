@@ -20,6 +20,7 @@ from errors import (
     TransactionDoesNotBalance,
 )
 from models import LedgerAccountStatus, LedgerAccountType, LedgerEntry
+from models import LedgerTransactionType
 from repositories import (
     IdempotencyRecordRepository,
     LedgerAccountRepository,
@@ -43,6 +44,11 @@ LOCK_NOT_AVAILABLE = "55P03"
 # O SQLSTATE do Postgres para "deadlock_detected": duas transações se
 # esperavam, e esta foi a abortada (fatia 10, §6).
 DEADLOCK_DETECTED = "40P01"
+
+# Os status de conta que aceitam movimento: `blocked` só no estorno, que é
+# a correção (fatia 14, RN-05; G :350-351; 06 :115-118).
+MOVABLE_STATUSES = (LedgerAccountStatus.ACTIVE,)
+REVERSAL_MOVABLE_STATUSES = (LedgerAccountStatus.ACTIVE, LedgerAccountStatus.BLOCKED)
 
 
 class PostingController(BaseController):
@@ -155,7 +161,8 @@ class PostingController(BaseController):
         """Passos 2 a 8, nesta ordem: o par proibido sai antes da trava, e o
         que depende da trava, depois dela (guia do Ledger §5); e a releitura
         do status depois do 7 (RN-08 da fatia 08)."""
-        self._check_accounts(legs)
+        movable_statuses = self._movable_statuses(transaction)
+        self._check_accounts(legs, movable_statuses)
         self._check_purpose_pairs(purpose_pairs)
         locked = self._lock_net_debits(legs)
 
@@ -166,7 +173,7 @@ class PostingController(BaseController):
             self._check_funds(locked)
 
         ledger_transaction = self._write(transaction, legs)
-        self._recheck_accounts(legs)
+        self._recheck_accounts(legs, movable_statuses)
         self._check_balanced(ledger_transaction)
 
         if after_write is not None:
@@ -257,20 +264,29 @@ class PostingController(BaseController):
             internal_error.translation,
         )
 
-    def _check_accounts(self, legs: list) -> None:
+    def _movable_statuses(self, transaction: dict) -> tuple:
+        """Os status que aceitam movimento nesta transação: o estorno aceita
+        `blocked` (fatia 14, RN-05), cobrindo a rota e o MED; `closed` nunca."""
+        if transaction["ledger_transaction_type"] == LedgerTransactionType.REVERSAL:
+            return REVERSAL_MOVABLE_STATUSES
+
+        return MOVABLE_STATUSES
+
+    def _check_accounts(self, legs: list, movable_statuses: tuple = MOVABLE_STATUSES) -> None:
         """Passo 2: toda conta das pernas aceita movimento, numa moeda só.
-        Lê o status sem trava (RN-05)."""
+        Lê o status sem trava (RN-05). `movable_statuses` sai do
+        `_movable_statuses` (fatia 14, RN-05)."""
         currencies = set()
 
         for ledger_account, _direction, _amount_in_cents in legs:
-            if ledger_account.ledger_account_status.enumerator != LedgerAccountStatus.ACTIVE:
+            if ledger_account.ledger_account_status.enumerator not in movable_statuses:
                 raise LedgerAccountNotMovable()
             currencies.add(ledger_account.currency)
 
         if len(currencies) > 1:
             raise CurrencyMismatch()
 
-    def _recheck_accounts(self, legs: list) -> None:
+    def _recheck_accounts(self, legs: list, movable_statuses: tuple = MOVABLE_STATUSES) -> None:
         """O passo 2 de novo, depois de gravar as pernas e antes do passo 8
         (fatia 08, RN-08).
 
@@ -279,13 +295,14 @@ class PostingController(BaseController):
         KEY SHARE` da conta conflita com o `FOR UPDATE` do encerramento) até
         o commit dele; daí em diante, só esta releitura vê o `closed`. Sem
         ela, a conta fecharia com saldo. Lê colunas, não entidades, e não
-        trava nada (D0007: crédito nunca trava).
+        trava nada (D0007: crédito nunca trava). Aceita os mesmos status do
+        passo 2 (fatia 14, RN-05): o estorno que esperou um bloqueio passa.
         """
         ledger_account_ids = [ledger_account.id for ledger_account, _direction, _amount_in_cents in legs]
         statuses = self.ledger_account_repository.get_statuses(ledger_account_ids)
 
         for ledger_account_id in ledger_account_ids:
-            if statuses[ledger_account_id] != LedgerAccountStatus.ACTIVE:
+            if statuses[ledger_account_id] not in movable_statuses:
                 raise LedgerAccountNotMovable()
 
     def _check_purpose_pairs(self, purpose_pairs: list) -> None:
