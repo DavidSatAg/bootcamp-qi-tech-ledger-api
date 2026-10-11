@@ -39,6 +39,10 @@
     "source_wallet_key": {
       "type": "string",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "wallet_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     }
   },
   "required": [
@@ -72,6 +76,21 @@
           {"required": ["payer_party_key"]},
           {"required": ["end_to_end_id"]},
           {"required": ["wallet_key"]},
+          {"required": ["client_key"]}
+        ]
+      }
+    },
+    {
+      "required": [
+        "wallet_key",
+        "end_to_end_id"
+      ],
+      "not": {
+        "anyOf": [
+          {"required": ["contract_key"]},
+          {"required": ["period_reference"]},
+          {"required": ["payer_party_key"]},
+          {"required": ["source_wallet_key"]},
           {"required": ["client_key"]}
         ]
       }

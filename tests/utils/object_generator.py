@@ -250,3 +250,17 @@ class ObjectGenerator:
         assert status == 201, payout
 
         return wallet["ledger_account_key"]
+
+    @staticmethod
+    def create_deposit(wallet_key: str, **kwargs) -> tuple:
+        """Um depósito por Pix na carteira, com a `Idempotency-Key` igual ao
+        `end_to_end_id` (01b :383-385).
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        deposit_payload = PayloadGenerator.create_deposit_payload(wallet_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_inflow(
+            deposit_payload, idempotency_key=deposit_payload["end_to_end_id"]
+        )
+
+        return status, response, deposit_payload

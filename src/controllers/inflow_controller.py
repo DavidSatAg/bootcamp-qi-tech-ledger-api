@@ -35,6 +35,11 @@ class InflowController(BaseController):
         if "source_wallet_key" in payload:
             return self._create_from_wallet(payload, idempotency_key, raw_body)
 
+        # O depósito por Pix na carteira: sem contrato nem competência
+        # (fatia 12, RN-07).
+        if "wallet_key" in payload:
+            return self._create_deposit(payload, idempotency_key, raw_body)
+
         collection, external = self._find_accounts(payload)
         value_date = self._value_date(payload)
 
@@ -125,6 +130,63 @@ class InflowController(BaseController):
         ]
         # As pernas `external` não consultam a `purpose_rule` (G:354).
         purpose_pairs = [(wallet, collection)]
+
+        ledger_transaction_key = posting_controller.post(
+            idempotency, transaction, legs, purpose_pairs, SUCCESS_STATUS
+        )
+
+        ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
+
+        return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    def _create_deposit(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
+        """O depósito por Pix: o dinheiro que chega de fora para a carteira,
+        tudo no livro da plataforma (fatia 12, RN-07; G:405-409).
+
+        O escopo da chave é o livro debitado, o da plataforma, conhecido
+        mesmo sem conta. Sem carteira — ou com uma conta que não é
+        `own/WALLET` —, o 018 sai pelo motor, com pernas vazias, e fica
+        gravado na chave (RN-04a).
+        """
+        wallet = self._find_wallet(payload["wallet_key"])
+        value_date = self._value_date(payload)
+
+        idempotency = {
+            "client_key": PLATFORM_CLIENT_KEY,
+            "endpoint": ENDPOINT,
+            "key": idempotency_key,
+            "raw_body": raw_body,
+        }
+        transaction = {
+            "ledger_transaction_type": LedgerTransactionType.INFLOW,
+            "contract_key": "",
+            "period_reference": "",
+            "end_to_end_id": payload["end_to_end_id"],
+            "value_date": value_date,
+            "actor": payload["actor"],
+            "reason": payload.get("reason"),
+        }
+
+        posting_controller = PostingController()
+
+        if wallet is None:
+            posting_controller.post(
+                idempotency, transaction, [], [], SUCCESS_STATUS, after_lock=self._raise_wallet_not_found
+            )
+
+        # Quem deposita é o dono da carteira (G:407).
+        transaction["payer_party_key"] = wallet.owner_party_key
+
+        platform_cash = self.ledger_account_repository.find_by_natural_key(
+            PLATFORM_CLIENT_KEY, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+        )
+
+        amount_in_cents = payload["amount_in_cents"]
+        legs = [
+            (platform_cash, LedgerEntry.DEBIT, amount_in_cents),
+            (wallet, LedgerEntry.CREDIT, amount_in_cents),
+        ]
+        purpose_pairs = [(platform_cash, wallet)]
 
         ledger_transaction_key = posting_controller.post(
             idempotency, transaction, legs, purpose_pairs, SUCCESS_STATUS

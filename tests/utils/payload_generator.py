@@ -343,3 +343,23 @@ class PayloadGenerator:
             "source_wallet_key": source_wallet_key,
             "actor": actor,
         }
+
+    @staticmethod
+    def create_deposit_payload(
+        wallet_key: str,
+        amount_in_cents: int = 450000,
+        end_to_end_id: str = None,
+        actor: str = "erp-alfa",
+    ) -> dict:
+        """O depósito por Pix na carteira (G:405-409): sem contrato e sem
+        competência. O `end_to_end_id` padrão é o da entrada por Pix, com
+        11 caracteres aleatórios no fim: único no ledger."""
+        if end_to_end_id is None:
+            end_to_end_id = "E00000000202609051422" + uuid4().hex[:11]
+
+        return {
+            "amount_in_cents": amount_in_cents,
+            "wallet_key": wallet_key,
+            "end_to_end_id": end_to_end_id,
+            "actor": actor,
+        }
