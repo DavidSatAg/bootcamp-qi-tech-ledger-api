@@ -849,6 +849,19 @@ que ela está, sem despachar de novo.
    executa SQL livre, não lê dado para asserção, não monta cenário — o
    cenário nasce por `POST`.
 
+### O provedor que aceita depois (`RequestGenerator.accept_pix`, fatia 14)
+
+1. *Princípio da base tocado:* o mock é fixo por chave: cada dono tem uma
+   resposta só.
+2. *Por que não funciona sem:* nenhum mock falha e depois aceita, e a
+   D0006 pede que a fila entregue depois o que falhou.
+3. *A peça, e por que é a menor:* um mapeamento no `/__admin/mappings` do
+   `provider-mock`, de **uma** chave de despacho do teste, com a resposta
+   do `pix-202.json`, só pelo tempo do `with`, e apagado na saída; sem
+   `persistent`, para não gravar arquivo no volume dos mocks.
+4. *O que ela não faz:* não altera arquivo de mock nem a resposta de outra
+   chave.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

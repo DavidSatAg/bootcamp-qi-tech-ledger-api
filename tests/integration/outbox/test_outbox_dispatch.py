@@ -166,3 +166,27 @@ class TestOutboxDispatch:
 
             assert status == 400, (payload, response)
             assert response["code"] == "QIT000001", (payload, response)
+
+    def test_outbox_dispatch_sends_pending_later(self):
+        payout, payload, idempotency_key = pending_payout()
+        dispatch_idempotency_key = payout["outbox"]["dispatch_idempotency_key"]
+
+        status, response, webhook_payload = ObjectGenerator.create_settlement(payout["outbox"])
+
+        assert status == 409, response
+        assert response["code"] == "QIT001011"
+
+        with RequestGenerator.accept_pix(dispatch_idempotency_key):
+            assert sweep(10) == {"sent": 1, "pending": 0, "dead": 0}
+
+        outbox = outbox_state(payload, idempotency_key)
+        assert (outbox["outbox_status"], outbox["attempt_count"]) == ("sent", 1)
+        assert len(pix_dispatches(dispatch_idempotency_key)) == 2
+
+        status, response = RequestGenerator.POST_webhooks_provider(webhook_payload)
+
+        assert status == 204, response
+        chain = trace(payout["ledger_transaction_key"])["chain"]
+        payout_links = [link for link in chain if link["ledger_transaction_key"] == payout["ledger_transaction_key"]]
+        assert payout_links[0]["outbox_status"] == "settled"
+        assert len([link for link in chain if link["ledger_transaction_type"] == "settlement"]) == 1

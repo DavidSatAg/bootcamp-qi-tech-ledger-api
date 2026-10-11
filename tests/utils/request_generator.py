@@ -1,5 +1,7 @@
 import json
+from contextlib import contextmanager
 from os import environ
+from pathlib import Path
 
 import requests
 
@@ -7,6 +9,9 @@ from tests.utils.requisition import ClientRequisition, BaseConnectorResponse
 
 
 INTERNAL_TOKEN = environ.get("INTERNAL_TOKEN", "default_token")
+
+# O mapeamento do provedor que aceita o Pix: o `accept_pix` responde como ele.
+PIX_ACCEPTED_MAPPING = Path(__file__).resolve().parents[1] / "mocks" / "provider-api" / "mappings" / "pix-202.json"
 
 
 class RequestGenerator:
@@ -337,3 +342,46 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    @contextmanager
+    def accept_pix(dispatch_idempotency_key: str):
+        """Faz o provedor aceitar o Pix desta chave de despacho, pelo tempo do
+        `with`: um mapeamento no `/__admin/mappings` do WireMock, com a
+        resposta do `pix-202.json`, apagado na saída.
+
+        Peça acrescentada pelo Ledger (fatia 14), com as quatro linhas:
+        1. Princípio tocado: o mock é fixo por chave (00 :96-100).
+        2. Por que não funciona sem: nenhum mock falha e depois aceita, e a
+           D0006 :153-155 pede que a fila entregue depois o que falhou.
+        3. A peça, e por que é a menor: um mapeamento, de uma chave de
+           despacho do teste, só no `with`, sem `persistent` (o volume monta
+           `tests/mocks/provider-api`: persistir gravaria arquivo). Prioridade
+           1, como o `pix-erro.json`: no empate, o WireMock usa o mais recente.
+        4. O que não faz: não altera arquivo de mock nem a resposta de outra
+           chave.
+        """
+        mock_port = environ.get("PROVIDER_MOCK_PORT", "8082")
+        api_host = environ.get("SERVER_LOCALHOST", "0.0.0.0")
+        admin_url = f"http://{api_host}:{mock_port}/__admin/mappings"
+
+        mapping = {
+            "priority": 1,
+            "request": {
+                "method": "POST",
+                "urlPath": "/pix",
+                "bodyPatterns": [
+                    {"matchesJsonPath": f"$[?(@.dispatch_idempotency_key == '{dispatch_idempotency_key}')]"}
+                ],
+            },
+            "response": json.loads(PIX_ACCEPTED_MAPPING.read_text(encoding="utf-8"))["response"],
+        }
+
+        response = requests.post(admin_url, json=mapping, timeout=5)
+        assert response.status_code == 201, response.text
+        mapping_id = response.json()["id"]
+
+        try:
+            yield
+        finally:
+            requests.delete(f"{admin_url}/{mapping_id}", timeout=5)
