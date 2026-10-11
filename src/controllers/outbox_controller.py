@@ -1,4 +1,5 @@
 from connectors import PartyConnector, ProviderConnector
+from constants import OUTBOX_MAX_ATTEMPTS
 from controllers.base_controller import BaseController
 from models import Outbox, OutboxStatus
 from repositories import OutboxRepository
@@ -63,12 +64,20 @@ class OutboxController(BaseController):
         tem, ou ela saiu de `pending`, commit e None, sem despachar. Senão,
         `in_flight` e commit; relê a chave Pix no Cadastro; manda o Pix;
         `sent` se o provedor aceitou, senão volta a `pending` com mais uma
-        tentativa; commit. Devolve o status final. Não repete."""
+        tentativa; commit. Devolve o status final. Não repete.
+        Com as tentativas esgotadas, `dead` e commit, sem rede (G :474)."""
         outbox = self.outbox_repository.claim_pending(outbox_id)
 
         if outbox is None:
             self.session.commit()
             return None
+
+        if outbox.attempt_count >= OUTBOX_MAX_ATTEMPTS:
+            self.outbox_repository.change_status(
+                outbox, OutboxStatus.DEAD, DISPATCHER_ACTOR, "tentativas esgotadas", get_request_id()
+            )
+            self.session.commit()
+            return OutboxStatus.DEAD
 
         # O commit expira o ORM: o que a chamada externa usa sai daqui antes.
         beneficiary_party_key = outbox.beneficiary_party_key

@@ -3,6 +3,7 @@ from uuid import uuid4
 from tests.utils import DbUtils, ObjectGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+PIX_ERROR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 
 
 def balance(ledger_account_key: str) -> int:
@@ -52,6 +53,31 @@ def sweep(limit: int) -> dict:
     return response
 
 
+def trace(ledger_transaction_key: str) -> dict:
+    status, response = RequestGenerator.GET_transfer_trace(ledger_transaction_key)
+    assert status == 200, response
+
+    return response
+
+
+def assert_integrity() -> None:
+    status, integrity = RequestGenerator.GET_integrity({"client_key": ALFA_CLIENT})
+    assert status == 200, integrity
+    assert integrity["difference_in_cents"] == 0, integrity
+
+
+def sweep_until_dead(payload: dict, idempotency_key: str) -> None:
+    """Quatro varreduras que falham (tentativas 2 a 5) e a quinta, que marca
+    `dead` sem chamar o provedor (G :474; D3)."""
+    for _ in range(4):
+        assert sweep(10) == {"sent": 0, "pending": 1, "dead": 0}
+
+    outbox = outbox_state(payload, idempotency_key)
+    assert (outbox["outbox_status"], outbox["attempt_count"]) == ("pending", 5)
+
+    assert sweep(10) == {"sent": 0, "pending": 0, "dead": 1}
+
+
 class TestOutboxDispatch:
     def test_outbox_dispatch_redispatches_with_same_key(self):
         payout, payload, idempotency_key = pending_payout()
@@ -71,6 +97,46 @@ class TestOutboxDispatch:
         assert balance(payload["source_account_key"]) == 0
         # O banco foi zerado: a clearing estava em 0 antes do repasse.
         assert balance(clearing_key()) == 450000
+
+    def test_outbox_dispatch_marks_dead_after_max_attempts(self):
+        payout, payload, idempotency_key = pending_payout()
+        dispatch_idempotency_key = payout["outbox"]["dispatch_idempotency_key"]
+
+        sweep_until_dead(payload, idempotency_key)
+
+        outbox = outbox_state(payload, idempotency_key)
+        assert (outbox["outbox_status"], outbox["attempt_count"]) == ("dead", 5)
+        assert len(pix_dispatches(dispatch_idempotency_key)) == 5
+
+        assert sweep(10) == {"sent": 0, "pending": 0, "dead": 0}
+        assert len(pix_dispatches(dispatch_idempotency_key)) == 5
+        # O banco foi zerado: a clearing estava em 0 antes do repasse.
+        assert balance(clearing_key()) == 450000
+
+    def test_outbox_dispatch_dead_payout_is_reversed(self):
+        payout, payload, idempotency_key = pending_payout()
+        sweep_until_dead(payload, idempotency_key)
+
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"])
+
+        assert status == 204, response
+        assert outbox_state(payload, idempotency_key)["outbox_status"] == "dead"
+        chain = trace(payout["ledger_transaction_key"])["chain"]
+        assert [link for link in chain if link["ledger_transaction_type"] == "settlement"] == []
+
+        status, response, _payload = ObjectGenerator.create_reversal(payout["ledger_transaction_key"])
+
+        assert status == 201, response
+        entries = trace(response["ledger_transaction_key"])["entries"]
+        assert [
+            (entry["direction"], entry["amount_in_cents"], entry["ledger_account_type"], entry["purpose_code"])
+            for entry in entries
+        ] == [("D", 450000, "clearing", "TRANSIT"), ("C", 450000, "earmark", "RENT")]
+        assert (entries[1]["owner_party_key"], entries[1]["owner_role"]) == (PIX_ERROR, "landlord")
+        assert balance(payload["source_account_key"]) == 450000
+        # O banco foi zerado: a clearing volta ao 0 de antes do repasse.
+        assert balance(clearing_key()) == 0
+        assert_integrity()
 
     def test_outbox_dispatch_skips_row_locked_elsewhere(self):
         payout, _payload, _idempotency_key = pending_payout()
