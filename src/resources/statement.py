@@ -30,7 +30,8 @@ class StatementResource:
 
     @SchemaHandler.validate("post_statement_verify.json")
     def on_post_verify(self, payload: dict) -> JSONResponse:
-        """A verificação pública do hash (sem `INTERNAL-TOKEN`): sempre 200."""
+        """A verificação pública do hash (sem `INTERNAL-TOKEN`): 200 com `match`;
+        corpo fora do schema (campo ausente, de outro tipo ou a mais) dá 400."""
         controller = StatementController()
         verification = controller.verify(payload["content_hash"])
 

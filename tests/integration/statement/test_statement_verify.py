@@ -44,7 +44,8 @@ class TestStatementVerify:
             assert status == 200, (content_hash, response)
             assert response == {"match": False}, (content_hash, response)
 
-        for payload in [{}, {"content_hash": 1}]:
+        # D-01 da S13: campo a mais também é 400 (additionalProperties: false).
+        for payload in [{}, {"content_hash": 1}, {"content_hash": "a" * 64, "extra": 1}]:
             status, response = RequestGenerator.POST_statement_verify(payload)
 
             assert status == 400, (payload, response)
