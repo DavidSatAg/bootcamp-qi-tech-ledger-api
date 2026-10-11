@@ -132,3 +132,20 @@ class ObjectGenerator:
                 return ledger_account["ledger_account_key"]
 
         raise AssertionError(f"o cliente {client_key} não tem conta {purpose_code} na primeira página")
+
+    @staticmethod
+    def create_internal(
+        source_account_key: str, target_account_key: str, idempotency_key: str = None, **kwargs
+    ) -> tuple:
+        """Uma transferência interna, com uma `Idempotency-Key` nova quando
+        nenhuma vem.
+
+        Devolve (status, corpo, payload) sem conferir o status.
+        """
+        if idempotency_key is None:
+            idempotency_key = str(uuid4())
+
+        internal_payload = PayloadGenerator.create_internal_payload(source_account_key, target_account_key, **kwargs)
+        status, response = RequestGenerator.POST_transfers_internal(internal_payload, idempotency_key=idempotency_key)
+
+        return status, response, internal_payload

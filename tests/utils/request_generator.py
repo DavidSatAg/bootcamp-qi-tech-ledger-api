@@ -204,6 +204,23 @@ class RequestGenerator:
         return response.response_status, response.response_json
 
     @staticmethod
+    def POST_transfers_internal(payload: dict = None, idempotency_key: str = None) -> BaseConnectorResponse:
+        """A transferência interna. A `Idempotency-Key` só vai quando há chave."""
+        headers = {"INTERNAL-TOKEN": INTERNAL_TOKEN}
+
+        if idempotency_key is not None:
+            headers["Idempotency-Key"] = idempotency_key
+
+        response = ClientRequisition.send(
+            "POST",
+            "/transfers/internal",
+            payload=payload,
+            headers=headers,
+        )
+
+        return response.response_status, response.response_json
+
+    @staticmethod
     def GET_mock_requests(mock: str, url_path: str) -> list:
         """O diário do mock (`party-mock` ou `provider-mock`), só das
         chamadas a `url_path`: [(headers, corpo)], do mais novo ao mais velho.

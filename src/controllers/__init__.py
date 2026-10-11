@@ -9,3 +9,4 @@ from controllers.split_controller import SplitController
 from controllers.statement_controller import StatementController
 from controllers.payout_controller import PayoutController
 from controllers.outbox_controller import OutboxController
+from controllers.internal_controller import InternalController

@@ -236,3 +236,28 @@ class PayloadGenerator:
             "actor": actor,
             "reason": reason,
         }
+
+    @staticmethod
+    def create_internal_payload(
+        source_account_key: str,
+        target_account_key: str,
+        gross_amount_in_cents: int = 45000,
+        actor: str = "gerente-financeiro@alfa",
+        reason: str = "devolução de taxa — MED 09/2026",
+        value_date: str = None,
+    ) -> dict:
+        """A transferência interna da TX8 do remodelagem/05: a devolução de
+        taxa, com uma alocação `remainder` só (fatia 15a, D1).
+        `value_date` ausente fica fora do corpo."""
+        payload = {
+            "source_account_key": source_account_key,
+            "gross_amount_in_cents": gross_amount_in_cents,
+            "allocations": [{"target_account_key": target_account_key, "type": "remainder"}],
+            "actor": actor,
+            "reason": reason,
+        }
+
+        if value_date is not None:
+            payload["value_date"] = value_date
+
+        return payload

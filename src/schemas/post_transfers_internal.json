@@ -1,0 +1,58 @@
+{
+  "title": "PostTransfersInternal",
+  "type": "object",
+  "properties": {
+    "source_account_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "gross_amount_in_cents": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "allocations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_account_key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "type": {
+            "const": "remainder"
+          }
+        },
+        "required": [
+          "target_account_key",
+          "type"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "value_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  },
+  "required": [
+    "source_account_key",
+    "gross_amount_in_cents",
+    "allocations",
+    "actor",
+    "reason"
+  ],
+  "additionalProperties": false
+}
