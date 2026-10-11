@@ -1,6 +1,7 @@
 import re
 
 from tests.utils import DbUtils, RequestGenerator
+from tests.utils import ObjectGenerator
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
@@ -39,6 +40,15 @@ ACCOUNTS_01B = [
     ("PLATFORM_FEE", "99999999-9999-4999-8999-999999999999", "platform"),
 ]
 
+# O corpo do 01b §4, literal, e o 409 do mock `closure-saldo-retido.json`.
+CLOSURE_01B = {"actor": "contract-api", "reason": "fim da locação ALFA-2026-0042"}
+HAS_BALANCE_MOCK = {
+    "title": "Account has balance",
+    "description": "An account of this contract has non-zero balance.",
+    "translation": "conta com saldo não pode ser encerrada",
+    "code": "QIT001037",
+}
+
 
 class TestContrato01b:
     def test_contract_ledgers_matches_ledger_mock(self):
@@ -75,3 +85,36 @@ class TestContrato01b:
         assert error["code"] == "QIT001032"
         for field in ("title", "description", "translation"):
             assert isinstance(error[field], str) and error[field] != ""
+
+    def test_contract_ledgers_closure_matches_ledger_mock(self):
+        DbUtils.rollback()
+
+        status, response = RequestGenerator.POST_contract_ledgers(CONTRACT_LEDGER_01B)
+        assert status == 201
+
+        contract_key = CONTRACT_LEDGER_01B["contract_key"]
+        status, response = RequestGenerator.POST_contract_ledgers_closure(contract_key, CLOSURE_01B)
+
+        assert status == 200
+        assert set(response.keys()) == {"contract_key", "closed_accounts"}
+        assert response["contract_key"] == "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c"
+        assert response["closed_accounts"] == 6
+        assert isinstance(response["closed_accounts"], int)
+
+        status, replay = RequestGenerator.POST_contract_ledgers_closure(contract_key, CLOSURE_01B)
+
+        assert status == 200
+        assert replay == response
+
+        status, contract_ledger = ObjectGenerator.create_contract_ledger()
+        assert status == 201
+        other_contract_key = contract_ledger["contract_key"]
+        status, _, _ = ObjectGenerator.create_inflow(other_contract_key, amount_in_cents=640000)
+        assert status == 201
+
+        status, error = RequestGenerator.POST_contract_ledgers_closure(
+            other_contract_key, dict(CLOSURE_01B, reason="mock:saldo-retido")
+        )
+
+        assert status == 409
+        assert error == HAS_BALANCE_MOCK
