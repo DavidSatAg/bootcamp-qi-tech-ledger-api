@@ -187,7 +187,7 @@ class LedgerAccountRepository:
     def get_purpose_code(self, enumerator: str) -> PurposeCode:
         return self.session.query(PurposeCode).filter(PurposeCode.enumerator == enumerator).first()
 
-    def lock_contract_accounts(self, contract_key: str) -> list:
+    def lock_contract_accounts(self, contract_key: str) -> list | None:
         """Trava as contas do contrato, em ordem crescente de id, e as devolve.
 
         `FOR UPDATE`, e não `FOR NO KEY UPDATE`: só ele conflita com o

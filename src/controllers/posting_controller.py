@@ -122,8 +122,9 @@ class PostingController(BaseController):
         return ledger_transaction_key
 
     def _execute(self, transaction: dict, legs: list, purpose_pairs: list) -> str:
-        """Passos 2, 3, 7 e 8. Os passos 4 a 6 (trava e saldo) entram entre o
-        3 e o 7 quando houver débito de passivo (fatia 07)."""
+        """Passos 2, 3, 7 e 8, e a releitura do status depois do 7 (RN-08 da
+        fatia 08). Os passos 4 a 6 (trava e saldo) entram entre o 3 e o 7
+        quando houver débito de passivo (fatia 07)."""
         self._check_accounts(legs)
         self._check_purpose_pairs(purpose_pairs)
 
