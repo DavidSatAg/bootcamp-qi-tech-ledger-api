@@ -40,3 +40,16 @@ class TestIntegrityGet:
         assert response["asset_in_cents"] == response["liability_in_cents"] + response["equity_in_cents"]
         assert response["asset_in_cents"] > 0
         assert response["negative_accounts"] == []
+
+    def test_integrity_unknown_book_is_zero(self):
+        unknown_books = ["c404c404-c404-4c40-8c40-c404c404c404", "c1c1"]
+
+        for unknown_book in unknown_books:
+            response = integrity({"client_key": unknown_book})
+
+            assert response["client_key"] == unknown_book
+            assert response["asset_in_cents"] == 0, unknown_book
+            assert response["liability_in_cents"] == 0, unknown_book
+            assert response["equity_in_cents"] == 0, unknown_book
+            assert response["difference_in_cents"] == 0, unknown_book
+            assert response["negative_accounts"] == [], unknown_book
