@@ -1,0 +1,13 @@
+{
+  "priority": 10,
+  "request": {
+    "method": "POST",
+    "urlPath": "/pix"
+  },
+  "response": {
+    "status": 202,
+    "headers": { "Content-Type": "application/json" },
+    "transformers": ["response-template"],
+    "body": "{\"provider_reference\": \"PRV-{{jsonPath request.body '$.dispatch_idempotency_key'}}\"}"
+  }
+}

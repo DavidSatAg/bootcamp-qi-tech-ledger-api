@@ -1,0 +1,14 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/pix",
+    "bodyPatterns": [
+      { "matchesJsonPath": "$[?(@.pix_key == 'timeout@mock')]" }
+    ]
+  },
+  "response": {
+    "status": 503,
+    "fixedDelayMilliseconds": 2000
+  }
+}
