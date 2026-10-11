@@ -17,8 +17,8 @@ class LedgerTransactionDTO:
         dto = dict()
         dto["ledger_transaction_key"] = ledger_transaction.ledger_transaction_key
         dto["ledger_transaction_type"] = ledger_transaction.ledger_transaction_type.enumerator
-        dto["contract_key"] = ledger_transaction.contract_key
-        dto["period_reference"] = ledger_transaction.period_reference
+        dto["contract_key"] = empty_as_null(ledger_transaction.contract_key)
+        dto["period_reference"] = empty_as_null(ledger_transaction.period_reference)
         dto["split_version"] = ledger_transaction.split_version
         dto["payer_party_key"] = empty_as_null(ledger_transaction.payer_party_key)
         dto["end_to_end_id"] = ledger_transaction.end_to_end_id
