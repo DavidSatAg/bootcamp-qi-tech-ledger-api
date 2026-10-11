@@ -319,3 +319,21 @@ class LedgerAccountRepository:
         )
 
         return self.session.query(func.clock_timestamp()).scalar()
+
+    def get_by_key_for_update(self, ledger_account_key: str) -> LedgerAccount:
+        """A conta da chave, relida do banco, ou None (fatia 14, RN-04): a
+        primeira leitura da conta na mudança de status, e o `from_status`
+        sai fresco.
+
+        A espera vai até o `lock_timeout`, com o `set_config(..., true)` do
+        `lock_contract_accounts`; estourar sobe como está (`55P03`), e quem o
+        traduz é o controller.
+        """
+        self.session.execute(select(func.set_config("lock_timeout", LOCK_TIMEOUT, True)))
+
+        return (
+            self.session.query(LedgerAccount)
+            .filter(LedgerAccount.ledger_account_key == ledger_account_key)
+            .populate_existing()
+            .first()
+        )

@@ -391,3 +391,14 @@ class PayloadGenerator:
             "end_to_end_id": end_to_end_id,
             "actor": actor,
         }
+
+    @staticmethod
+    def create_status_payload(status: str, actor: str = "erp-alfa", reason: str = None) -> dict:
+        """A mudança de status da conta (RFC :145), como o ERP a manda.
+        O motivo ausente fica fora do corpo."""
+        payload = {"status": status, "actor": actor}
+
+        if reason is not None:
+            payload["reason"] = reason
+
+        return payload

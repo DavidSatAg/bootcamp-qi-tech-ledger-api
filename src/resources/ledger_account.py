@@ -58,3 +58,15 @@ class LedgerAccountResource:
             content=jsonable_encoder(page_envelope),
             status_code=http_status.HTTP_200_OK,
         )
+
+    @SchemaHandler.validate("put_ledger_accounts_status.json")
+    def on_put_status(self, ledger_account_key: str, payload: dict) -> JSONResponse:
+        """Bloqueia, desbloqueia ou encerra a conta (RFC :145): devolve a
+        conta como o GET dela."""
+        controller = LedgerAccountController()
+        ledger_account = controller.change_status(ledger_account_key, payload)
+
+        return JSONResponse(
+            content=jsonable_encoder(ledger_account),
+            status_code=http_status.HTTP_200_OK,
+        )

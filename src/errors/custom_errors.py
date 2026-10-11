@@ -421,3 +421,14 @@ class ClientBooksNotFound(QIException):
             description = f"The client {client_key} has no books in the ledger."
         translation = "cliente sem livros no ledger"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class LedgerAccountInvalidTransition(QIException):
+    code = "QIT001043"
+
+    def __init__(self) -> None:
+        title = "Ledger account invalid transition"
+        http_status = 409
+        description = "The ledger account cannot go from its current status to the requested one."
+        translation = "transição de estado da conta inválida"
+        super().__init__(title, self.code, http_status, description, translation)

@@ -310,3 +310,15 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def PUT_ledger_account_status(ledger_account_key: str, payload: dict) -> BaseConnectorResponse:
+        """A mudança de status da conta (bloquear, desbloquear, encerrar)."""
+        response = ClientRequisition.send(
+            "PUT",
+            f"/ledger_accounts/{ledger_account_key}/status",
+            payload=payload,
+            headers={"INTERNAL-TOKEN": INTERNAL_TOKEN},
+        )
+
+        return response.response_status, response.response_json

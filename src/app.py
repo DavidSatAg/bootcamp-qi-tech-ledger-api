@@ -189,6 +189,11 @@ def create_app() -> FastAPI:
         ledger_account_resource.on_get_list,
         methods=["GET"],
     )
+    application.add_api_route(
+        "/ledger_accounts/{ledger_account_key}/status",
+        ledger_account_resource.on_put_status,
+        methods=["PUT"],
+    )
 
     transfer_resource = TransferResource()
     application.add_api_route(
