@@ -197,6 +197,35 @@ class TestSplitCreate:
         assert response["ledger_transaction_key"] == first["ledger_transaction_key"]
         assert balance(keys["RENT"]) == 450000
 
+    def test_transfers_split_uses_latest_version(self):
+        contract_ledger = provision_contract()
+        contract_key = contract_ledger["contract_key"]
+        inflow(contract_key)
+        first = split(contract_key)
+
+        status, version_two = ObjectGenerator.create_contract_ledger(
+            contract_key=contract_key, split_version=2, rent_amount_in_cents=530000
+        )
+        assert status == 201, version_two
+        inflow(contract_key, amount_in_cents=670000, period_reference="2026-10")
+
+        second = split(contract_key, period_reference="2026-10")
+
+        assert second["split_version"] == 2
+        entries = trace(second["ledger_transaction_key"])["entries"]
+        assert legs(entries) == [
+            ("D", "COLLECTION", 670000),
+            ("D", "OWN", 5300),
+            ("C", "RENT", 477000),
+            ("C", "OWN", 53000),
+            ("C", "IPTU", 30000),
+            ("C", "CONDO", 80000),
+            ("C", "WATER", 12000),
+            ("C", "ELECTRICITY", 18000),
+            ("C", "PLATFORM_FEE", 5300),
+        ]
+        assert trace(first["ledger_transaction_key"])["transaction"]["split_version"] == 1
+
     def test_transfers_split_unknown_contract_returns_404(self):
         status, response, _payload = ObjectGenerator.create_split(str(uuid4()))
 
