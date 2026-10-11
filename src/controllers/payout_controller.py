@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 
 from connectors import PartyConnector
+from constants import PLATFORM_CLIENT_KEY
 from controllers.base_controller import BaseController
 from controllers.outbox_controller import OutboxController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO, OutboxDTO
 from errors import LedgerAccountNotFound, OwnerNotActive, OwnerWithoutPixKey, PartyServiceUnavailable
+from errors import OwnerWithoutWallet
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
 from repositories import (
     IdempotencyRecordRepository,
@@ -25,6 +27,11 @@ SUCCESS_STATUS = 202
 # qualquer outro status é Cadastro indisponível (D10).
 PARTY_ANSWERS = (200, 404)
 PARTY_ACTIVE = "active"
+
+# O repasse para a carteira não despacha nada: o dinheiro já chegou, e a
+# resposta é 201 (RFC :150; fatia 12, RN-04).
+WALLET_SUCCESS_STATUS = 201
+WALLET_DESTINATION = "wallet"
 
 
 class PayoutController(BaseController):
@@ -57,6 +64,12 @@ class PayoutController(BaseController):
         owner_party_key = source.owner_party_key
         client_key = source.client_key
         contract_key = source.contract_key
+        # Para a carteira do dono, antes do Cadastro e do commit D2: o
+        # Ledger só consulta o Cadastro no Pix e na abertura (fatia 12,
+        # RN-03). Sem dono, segue o Pix, que dá o 008 no motor.
+        if payload["destination"] == WALLET_DESTINATION and owner_party_key != "":
+            return self._create_to_wallet(payload, idempotency_key, raw_body, source)
+
         replay = self._is_replay(client_key, idempotency_key)
 
         # Fecha a leitura antes do Cadastro, sem escrita (D2).
@@ -121,6 +134,85 @@ class PayoutController(BaseController):
         payout["outbox"] = OutboxDTO.obj_to_dict(outbox)
 
         return payout
+
+    def _create_to_wallet(self, payload: dict, idempotency_key: str, raw_body: bytes, source) -> dict:
+        """O repasse para a carteira do dono: quatro pernas em dois livros
+        (fatia 12, RN-04; remodelagem/10 :73-76). A origem sai do livro do
+        cliente e entra na carteira, no livro da plataforma; o par `external`
+        leva o dinheiro de um livro ao outro, e cada livro fecha em zero.
+
+        Sem carteira, o 041 sai pelo motor, com pernas vazias, e fica
+        gravado na chave (RN-04a): a repetição devolve o mesmo 041.
+        """
+        client_key = source.client_key
+        idempotency = {
+            "client_key": client_key,
+            "endpoint": ENDPOINT,
+            "key": idempotency_key,
+            "raw_body": raw_body,
+        }
+        transaction = {
+            "ledger_transaction_type": LedgerTransactionType.PAYOUT,
+            "contract_key": source.contract_key,
+            "period_reference": payload["period_reference"],
+            "value_date": datetime.now(timezone.utc),
+            "actor": payload["actor"],
+            "reason": payload.get("reason"),
+        }
+
+        wallet = self.ledger_account_repository.find_by_natural_key(
+            PLATFORM_CLIENT_KEY, LedgerAccountType.OWN, PurposeCode.WALLET, "", source.owner_party_key
+        )
+
+        posting_controller = PostingController()
+
+        if wallet is None:
+            posting_controller.post(
+                idempotency,
+                transaction,
+                [],
+                [],
+                WALLET_SUCCESS_STATUS,
+                after_lock=self._raise_owner_without_wallet,
+            )
+
+        platform_cash = self.ledger_account_repository.find_by_natural_key(
+            PLATFORM_CLIENT_KEY, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+        )
+        client_cash = self.ledger_account_repository.find_by_natural_key(
+            client_key, LedgerAccountType.EXTERNAL, PurposeCode.CASH, "", ""
+        )
+
+        amount_in_cents = payload["amount_in_cents"]
+        legs = [
+            (source, LedgerEntry.DEBIT, amount_in_cents),
+            (wallet, LedgerEntry.CREDIT, amount_in_cents),
+            (platform_cash, LedgerEntry.DEBIT, amount_in_cents),
+            (client_cash, LedgerEntry.CREDIT, amount_in_cents),
+        ]
+        # As pernas `external` não consultam a `purpose_rule` (G:354).
+        purpose_pairs = [(source, wallet)]
+
+        ledger_transaction_key = posting_controller.post(
+            idempotency,
+            transaction,
+            legs,
+            purpose_pairs,
+            WALLET_SUCCESS_STATUS,
+        )
+
+        ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
+
+        payout = LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+        payout["outbox"] = None
+
+        return payout
+
+    @staticmethod
+    def _raise_owner_without_wallet() -> None:
+        """Passo 5 do motor, sem pernas: o 041 sai depois do registro da
+        chave, e o motor o grava (fatia 12, RN-04a)."""
+        raise OwnerWithoutWallet()
 
     def _create_outbox(self, ledger_transaction, owner_party_key: str, payload: dict) -> None:
         """Depois do passo 8, no SAVEPOINT do motor: a outbox entra no mesmo

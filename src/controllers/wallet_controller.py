@@ -4,16 +4,12 @@ from connectors import PartyConnector
 from constants import PLATFORM_CLIENT_KEY, PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
 from controllers.contract_ledger_controller import CLIENT_BOOKS
+from controllers.payout_controller import PARTY_ACTIVE, PARTY_ANSWERS
 from dtos import LedgerAccountDTO
 from errors import OwnerNotActive, PartyServiceUnavailable
 from models import LedgerAccount, LedgerAccountType, PurposeCode
 from repositories import LedgerAccountRepository
 from utils.request_context import get_request_id
-
-# O Cadastro responde a parte com 200 ou diz que ela não existe com 404;
-# qualquer outro status é Cadastro indisponível (S09 D10).
-PARTY_ANSWERS = (200, 404)
-PARTY_ACTIVE = "active"
 
 # Quem é o dono de cada livro da plataforma, pelo papel (G:376-378):
 # a própria plataforma na `own` e na `revenue`, ninguém nas de serviço.

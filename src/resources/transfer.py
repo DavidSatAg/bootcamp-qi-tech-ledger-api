@@ -71,9 +71,15 @@ class TransferResource:
         controller = PayoutController()
         payout = controller.create(payload, idempotency_key, raw_body)
 
+        # Para a carteira não há despacho: o dinheiro já chegou, 201
+        # (RFC :150; fatia 12, RN-05).
+        status_code = http_status.HTTP_202_ACCEPTED
+        if payload["destination"] == "wallet":
+            status_code = http_status.HTTP_201_CREATED
+
         return JSONResponse(
             content=jsonable_encoder(payout),
-            status_code=http_status.HTTP_202_ACCEPTED,
+            status_code=status_code,
         )
 
     @SchemaHandler.validate("post_transfers_internal.json")

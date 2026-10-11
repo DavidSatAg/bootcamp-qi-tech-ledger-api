@@ -397,3 +397,14 @@ class ReversalOfReversal(QIException):
         description = "A reversal cannot be reversed."
         translation = "não se estorna estorno"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class OwnerWithoutWallet(QIException):
+    code = "QIT001041"
+
+    def __init__(self) -> None:
+        title = "Owner without wallet"
+        http_status = 404
+        description = "The owner of the source account has no wallet in the ledger."
+        translation = "dono sem carteira"
+        super().__init__(title, self.code, http_status, description, translation)
