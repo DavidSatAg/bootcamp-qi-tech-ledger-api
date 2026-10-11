@@ -1,3 +1,4 @@
+import re
 from os import environ
 from pathlib import Path
 
@@ -67,5 +68,30 @@ class DbUtils:
         except OperationalError:
             message = DATABASE_OFFLINE.format(host=engine.url.host, port=engine.url.port)
             raise RuntimeError(message) from None
+        finally:
+            engine.dispose()
+
+    @staticmethod
+    def truncate(table: str) -> None:
+        """Manda `TRUNCATE <table>` ao banco e deixa o erro dele subir.
+
+        Peça acrescentada pelo Ledger (fatia 03), com as quatro linhas:
+        1. Princípio tocado: "`db_utils` só zera, nunca monta cenário".
+        2. Por que não funciona sem: `TRUNCATE`/`UPDATE` em `ledger_entry`
+           não existem por HTTP, e CU-F9/F10 e a D0005 ("Como se verifica")
+           exigem a prova de que o banco os recusa.
+        3. A peça, e por que é a menor: um método que só faz `TRUNCATE` de
+           uma tabela e deixa o erro subir — o mínimo que prova CU-F10.
+        4. O que não faz: não executa SQL livre, não insere, não atualiza,
+           não lê resultado, não monta cenário.
+        """
+        if not re.fullmatch(r"[a-z_]+", table):
+            raise ValueError(f"nome de tabela invalido: {table!r}")
+
+        engine = create_engine(DbUtils.database_url(), isolation_level="AUTOCOMMIT")
+
+        try:
+            with engine.connect() as connection:
+                connection.exec_driver_sql(f"TRUNCATE {table}")
         finally:
             engine.dispose()

@@ -39,6 +39,12 @@ CREATE TABLE sample_entity_status_event(
 -- LEDGER -- acrescentado pelo time. Nada acima desta linha mudou.
 -- ====================================================================
 
+CREATE FUNCTION append_only_guard() RETURNS TRIGGER AS $func$
+BEGIN
+    RAISE EXCEPTION USING MESSAGE = TG_TABLE_NAME || ' e append-only: corrija por lancamento contrario';
+END;
+$func$ LANGUAGE plpgsql;
+
 -- --- Plano de contas ------------------------------------------------
 
 CREATE TABLE ledger_account_type(
@@ -285,6 +291,18 @@ CREATE TABLE statement(
     UNIQUE(supersedes_statement_id)
 );
 
+-- --- Imutabilidade imposta pelo banco: dois gatilhos por tabela ------
+
+CREATE TRIGGER ledger_entry_no_change BEFORE UPDATE OR DELETE ON ledger_entry FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER ledger_entry_no_truncate BEFORE TRUNCATE ON ledger_entry FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER provider_event_no_change BEFORE UPDATE OR DELETE ON provider_event FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER provider_event_no_truncate BEFORE TRUNCATE ON provider_event FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER split_snapshot_no_change BEFORE UPDATE OR DELETE ON split_snapshot FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER split_snapshot_no_truncate BEFORE TRUNCATE ON split_snapshot FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER ledger_account_status_event_no_change BEFORE UPDATE OR DELETE ON ledger_account_status_event FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER ledger_account_status_event_no_truncate BEFORE TRUNCATE ON ledger_account_status_event FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER outbox_status_event_no_change BEFORE UPDATE OR DELETE ON outbox_status_event FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER outbox_status_event_no_truncate BEFORE TRUNCATE ON outbox_status_event FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
 
 -- --- Indices: so os das consultas que existem ------------------------
 
