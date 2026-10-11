@@ -1,8 +1,10 @@
+from decimal import Decimal
+
 from constants import PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
 from dtos import ContractLedgerDTO
-from models import LedgerAccount, LedgerAccountType, PurposeCode
-from repositories import LedgerAccountRepository
+from models import LedgerAccount, LedgerAccountType, PurposeCode, SplitSnapshot
+from repositories import LedgerAccountRepository, SplitSnapshotRepository
 from utils.request_context import get_request_id
 
 # Os cinco livros do cliente: (tipo, propósito, papel do dono). O dono
@@ -23,6 +25,7 @@ class ContractLedgerController(BaseController):
     def __init__(self) -> None:
         super().__init__(__name__)
         self.ledger_account_repository = LedgerAccountRepository(self.context)
+        self.split_snapshot_repository = SplitSnapshotRepository(self.context)
 
     def provision(self, payload: dict) -> tuple:
         """Abre o que falta e devolve (corpo, criou?).
@@ -38,12 +41,64 @@ class ContractLedgerController(BaseController):
         for item in payload["items"]:
             item_accounts.append(self._open_item_account(payload, item, client_books))
 
+        self._write_split_snapshot(payload, collection, item_accounts, client_books)
+
         accounts = self._split_accounts(collection, item_accounts, client_books)
 
-        contract_ledger_dto = ContractLedgerDTO.obj_to_dict(payload["contract_key"], accounts)
+        contract_ledger_dto = ContractLedgerDTO.obj_to_dict(
+            payload["contract_key"],
+            payload["split_version"],
+            self._expected_amount_in_cents(payload),
+            accounts,
+        )
         self.session.commit()
 
         return contract_ledger_dto, True
+
+    def _expected_amount_in_cents(self, payload: dict) -> int:
+        """O valor esperado da competência: o aluguel mais os itens `fixed`."""
+        expected_amount_in_cents = payload["rent_amount_in_cents"]
+
+        for item in payload["items"]:
+            if item["type"] == SplitSnapshot.FIXED:
+                expected_amount_in_cents = expected_amount_in_cents + item["value"]
+
+        return expected_amount_in_cents
+
+    def _write_split_snapshot(self, payload: dict, collection: LedgerAccount, item_accounts: list, client_books: dict) -> None:
+        """Uma linha por item, saindo da COLLECTION, e uma da taxa da
+        plataforma, saindo da `own` para a `revenue`. O aluguel vai em todas."""
+        for item, item_account in zip(payload["items"], item_accounts):
+            percentage = None
+            amount_in_cents = None
+
+            if item["type"] == SplitSnapshot.PERCENTAGE:
+                percentage = Decimal(item["value"])
+
+            if item["type"] == SplitSnapshot.FIXED:
+                amount_in_cents = item["value"]
+
+            self.split_snapshot_repository.create(
+                contract_key=payload["contract_key"],
+                split_version=payload["split_version"],
+                source_ledger_account=collection,
+                ledger_account=item_account,
+                allocation_type=item["type"],
+                percentage=percentage,
+                amount_in_cents=amount_in_cents,
+                rent_amount_in_cents=payload["rent_amount_in_cents"],
+            )
+
+        self.split_snapshot_repository.create(
+            contract_key=payload["contract_key"],
+            split_version=payload["split_version"],
+            source_ledger_account=client_books[PurposeCode.OWN],
+            ledger_account=client_books[PurposeCode.PLATFORM_FEE],
+            allocation_type=SplitSnapshot.PERCENTAGE,
+            percentage=Decimal(payload["platform_fee_percentage"]),
+            amount_in_cents=None,
+            rent_amount_in_cents=payload["rent_amount_in_cents"],
+        )
 
     def _split_accounts(self, collection: LedgerAccount, item_accounts: list, client_books: dict) -> list:
         """As contas do split, na ordem do 01b: COLLECTION, os earmarks na

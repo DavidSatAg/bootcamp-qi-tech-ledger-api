@@ -11,9 +11,16 @@ class ContractLedgerDTO:
     """
 
     @staticmethod
-    def obj_to_dict(contract_key: str, accounts: List[LedgerAccount]) -> dict:
+    def obj_to_dict(
+        contract_key: str,
+        split_version: int,
+        expected_amount_in_cents: int,
+        accounts: List[LedgerAccount],
+    ) -> dict:
         dto = dict()
         dto["contract_key"] = contract_key
+        dto["split_version"] = split_version
+        dto["expected_amount_in_cents"] = expected_amount_in_cents
         dto["accounts"] = []
 
         for ledger_account in accounts:
