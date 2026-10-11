@@ -1,6 +1,13 @@
-from uuid import uuid4
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
 
 from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
+
+ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
+CARLOS = "33333333-3333-4333-8333-333333333333"
+
+# O relógio do container e o da máquina dos testes não andam juntos (hipótese).
+SLACK = timedelta(seconds=60)
 
 
 def provision_contract() -> tuple:
@@ -21,7 +28,54 @@ def balance(ledger_account_key: str) -> int:
     return ledger_account["balance_in_cents"]
 
 
+def external_key() -> str:
+    """O `external/CASH` da Imobiliária Alfa: nasce com o primeiro livro do
+    cliente, e por isso está na primeira página da listagem."""
+    status, page = RequestGenerator.GET_ledger_accounts({"client_key": ALFA_CLIENT, "limit": "100"})
+    assert status == 200, page
+
+    for ledger_account in page["data"]:
+        if ledger_account["purpose_code"] == "CASH":
+            return ledger_account["ledger_account_key"]
+
+    raise AssertionError(f"external/CASH ausente na listagem: {page}")
+
+
 class TestInflowPix:
+    def test_transfers_inflow_credits_collection(self):
+        contract_key, collection_key = provision_contract()
+        external_before = balance(external_key())
+
+        status, response, payload = ObjectGenerator.create_inflow(contract_key)
+
+        assert status == 201, response
+        assert str(UUID(response["ledger_transaction_key"])) == response["ledger_transaction_key"]
+        assert response["ledger_transaction_type"] == "inflow"
+        assert response["contract_key"] == contract_key
+        assert response["period_reference"] == "2026-09"
+        assert response["payer_party_key"] == CARLOS
+        assert response["end_to_end_id"] == payload["end_to_end_id"]
+        assert balance(collection_key) == 640000
+        assert balance(external_key()) - external_before == 640000
+
+    def test_transfers_inflow_records_value_date(self):
+        contract_key, _collection_key = provision_contract()
+
+        status, response, _payload = ObjectGenerator.create_inflow(contract_key, value_date="2026-09-05T14:22:00Z")
+
+        assert status == 201, response
+        assert datetime.fromisoformat(response["value_date"]) == datetime(2026, 9, 5, 14, 22, tzinfo=timezone.utc)
+        assert response["value_date"].endswith("Z")
+
+        before = datetime.now(timezone.utc)
+        status, response, _payload = ObjectGenerator.create_inflow(contract_key)
+        after = datetime.now(timezone.utc)
+
+        assert status == 201, response
+        value_date = datetime.fromisoformat(response["value_date"])
+        assert before - SLACK <= value_date <= after + SLACK
+        assert response["value_date"].endswith("Z")
+
     def test_transfers_inflow_unknown_contract_returns_404(self):
         status, response, _payload = ObjectGenerator.create_inflow(str(uuid4()))
 
