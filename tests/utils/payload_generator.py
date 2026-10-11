@@ -149,7 +149,7 @@ class PayloadGenerator:
         actor: str = "erp-alfa",
     ) -> dict:
         """A entrada por Pix do caso do remodelagem/05 (TX1): o aluguel de
-        setembro pago pelo Carlos (3333…) no contrato pedido.
+        setembro pago pelo Bruno (3333…) no contrato pedido.
 
         O `end_to_end_id` é o do exemplo com 11 caracteres aleatórios no
         fim: ele é único no ledger, e cada entrada precisa do seu.

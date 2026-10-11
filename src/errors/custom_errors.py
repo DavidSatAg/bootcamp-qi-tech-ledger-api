@@ -252,5 +252,5 @@ class IdempotencyKeyConflict(QIException):
             "The Idempotency-Key was already used with a different request body, "
             "or the end_to_end_id was already used under another Idempotency-Key."
         )
-        translation = "mesma chave de idempotência, corpo diferente"
+        translation = "mesma chave de idempotência, corpo diferente; ou end_to_end_id já usado sob outra chave"
         super().__init__(title, self.code, http_status, description, translation)
