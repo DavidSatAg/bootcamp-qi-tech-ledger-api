@@ -194,3 +194,19 @@ class TestInflowPix:
         assert status == 409, response
         assert response["code"] == "QIT001010"
         assert balance(collection_key) == 640000
+
+    def test_transfers_inflow_closed_contract_conflicts(self):
+        contract_key, collection_key = provision_contract()
+        status, response = ObjectGenerator.close_contract_ledger(contract_key)
+        assert status == 200, response
+
+        payload = PayloadGenerator.create_inflow_payload(contract_key)
+        idempotency_key = payload["end_to_end_id"]
+
+        for _ in range(2):
+            status, response = RequestGenerator.POST_transfers_inflow(payload, idempotency_key=idempotency_key)
+
+            assert status == 409, response
+            assert response["code"] == "QIT001012"
+
+        assert balance(collection_key) == 0
