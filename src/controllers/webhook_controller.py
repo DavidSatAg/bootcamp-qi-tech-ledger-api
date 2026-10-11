@@ -23,6 +23,9 @@ SUCCESS_STATUS = 204
 
 SETTLEMENT_FAILED = "settlement_failed"
 
+# A outbox que o provedor ainda não recebeu: o aviso chegou antes da hora.
+NOT_SENT_STATUSES = (OutboxStatus.PENDING, OutboxStatus.IN_FLIGHT)
+
 # Quem move o dinheiro na liquidação é o provedor (06:35-37; G:454).
 PROVIDER_ACTOR = "provider"
 
@@ -53,6 +56,18 @@ class WebhookController(BaseController):
         # O mesmo `provider_reference` já guardado é o reenvio: 204, sem
         # mais nada (RN-03; RFC :419-421).
         if not self._register_event(payload, outbox):
+            return
+
+        # O estado, lido sob a trava (RN-04, D4). Ainda não enviada: 011,
+        # repetível; quem desfaz a transação, com o `provider_event`, é o
+        # `close()` do session_manager. Já resolvida: só o aviso fica.
+        outbox_status = outbox.outbox_status.enumerator
+
+        if outbox_status in NOT_SENT_STATUSES:
+            raise LockTimeout()
+
+        if outbox_status != OutboxStatus.SENT:
+            self.session.commit()
             return
 
         self._settle(payload, outbox, value_date, raw_body)

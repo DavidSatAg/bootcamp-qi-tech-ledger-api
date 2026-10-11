@@ -5,6 +5,7 @@ from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGener
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
 ANA = "22222222-2222-4222-8222-222222222222"
+PIX_TIMEOUT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
 
 def balance(ledger_account_key: str) -> int:
@@ -206,3 +207,35 @@ class TestWebhookSettlement:
             ("D", 450000, "clearing", "TRANSIT", None, None),
             ("C", 450000, "earmark", "RENT", ANA, "landlord"),
         ]
+
+    def test_webhooks_provider_outbox_not_sent_conflicts(self):
+        """Outbox ainda `pending` (o provedor deu timeout no despacho): o
+        aviso dá 409 e nada fica, nem o `provider_event` (D4)."""
+        contract_ledger, payout = ObjectGenerator.create_paid_out_contract(PIX_TIMEOUT)
+        assert payout["outbox"]["outbox_status"] == "pending", payout
+        before = balances(contract_ledger)
+
+        for _attempt in range(2):
+            status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"])
+
+            assert status == 409, response
+            assert response["code"] == "QIT001011"
+
+        assert payout_link(payout)["outbox_status"] == "pending"
+        assert links_of_type(payout, "settlement") == []
+        assert moved(before, contract_ledger) == {"CLR": 0, "CASH": 0, "RENT": 0}
+        assert before["RENT"] == 0
+
+    def test_webhooks_provider_final_state_is_kept(self):
+        contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
+
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"])
+
+        assert status == 204, response
+
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"], event_type="settlement_failed")
+
+        assert status == 204, response
+        assert payout_link(payout)["outbox_status"] == "settled"
+        assert balance(rent_key(contract_ledger)) == 0
+        assert links_of_type(payout, "dispatch_return") == []
