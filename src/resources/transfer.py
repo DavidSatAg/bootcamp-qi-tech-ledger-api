@@ -1,4 +1,5 @@
 from fastapi import Depends, Header
+from fastapi import Request
 from fastapi import status as http_status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -9,8 +10,12 @@ from controllers import SplitController
 from controllers import PayoutController
 from controllers import InternalController
 from controllers import ReversalController
+from controllers import TransferController
 from utils.raw_body import read_raw_body
 from utils.schema_handler import SchemaHandler
+
+DEFAULT_LIMIT = 10
+DEFAULT_PAGE = 0
 
 
 class TransferResource:
@@ -113,4 +118,39 @@ class TransferResource:
         return JSONResponse(
             content=jsonable_encoder(ledger_transaction),
             status_code=http_status.HTTP_201_CREATED,
+        )
+
+    @SchemaHandler.validate_query_params("get_transfers.json")
+    def on_get_list(self, request: Request) -> JSONResponse:
+        """A página de transações do pagador, ou do contrato na competência.
+
+        O decorator já conferiu a query string: o pagador sozinho, ou o
+        contrato com a competência; `limit`/`page` só com dígitos.
+        """
+        controller = TransferController()
+
+        query_params = request.query_params
+
+        limit = int(query_params.get("limit", DEFAULT_LIMIT))
+        page = int(query_params.get("page", DEFAULT_PAGE))
+
+        filters = {
+            "payer_party_key": query_params.get("payer_party_key"),
+            "contract_key": query_params.get("contract_key"),
+            "period_reference": query_params.get("period_reference"),
+        }
+
+        offset = page * limit
+        ledger_transactions_page = controller.get_list(limit, offset, filters)
+
+        page_envelope = {
+            "data": ledger_transactions_page["ledger_transactions_list_dto"],
+            "limit": limit,
+            "page": page,
+            "is_last_page": ledger_transactions_page["is_last_page"],
+        }
+
+        return JSONResponse(
+            content=jsonable_encoder(page_envelope),
+            status_code=http_status.HTTP_200_OK,
         )

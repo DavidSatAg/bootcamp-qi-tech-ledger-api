@@ -221,6 +221,11 @@ def create_app() -> FastAPI:
         transfer_resource.on_post_reversal,
         methods=["POST"],
     )
+    application.add_api_route(
+        "/transfers",
+        transfer_resource.on_get_list,
+        methods=["GET"],
+    )
 
     integrity_resource = IntegrityResource()
     application.add_api_route(

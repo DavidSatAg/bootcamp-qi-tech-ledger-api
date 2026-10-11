@@ -118,3 +118,25 @@ class LedgerTransactionRepository:
         """A transação do `end_to_end_id` (a entrada Pix; UNIQUE): a que o
         MED devolve (fatia 11 RN-09)."""
         return self.session.query(LedgerTransaction).filter(LedgerTransaction.end_to_end_id == end_to_end_id).first()
+
+    def list_page(self, limit: int, offset: int, filters: dict) -> list:
+        """A página de transações do pagador, ou do contrato na competência
+        (o schema garante um filtro só), por `id`, como a das contas: pede
+        um a mais que o limite para saber se há próxima. Sem trava."""
+        query = self.session.query(LedgerTransaction)
+
+        payer_party_key = filters.get("payer_party_key")
+        if payer_party_key is not None:
+            query = query.filter(LedgerTransaction.payer_party_key == payer_party_key)
+
+        contract_key = filters.get("contract_key")
+        if contract_key is not None:
+            query = query.filter(LedgerTransaction.contract_key == contract_key)
+
+        period_reference = filters.get("period_reference")
+        if period_reference is not None:
+            query = query.filter(LedgerTransaction.period_reference == period_reference)
+
+        query = query.order_by(LedgerTransaction.id)
+
+        return query.limit(limit + 1).offset(offset).all()

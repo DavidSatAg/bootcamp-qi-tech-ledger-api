@@ -301,3 +301,12 @@ class RequestGenerator:
         )
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def GET_transfers(params: dict = None) -> BaseConnectorResponse:
+        """A página de transações por pagador ou por competência do contrato."""
+        response = ClientRequisition.send(
+            "GET", "/transfers", headers={"INTERNAL-TOKEN": INTERNAL_TOKEN}, query_params=params
+        )
+
+        return response.response_status, response.response_json

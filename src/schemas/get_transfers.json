@@ -1,0 +1,59 @@
+{
+  "title": "GetTransfers",
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "string",
+      "pattern": "^(100|[1-9]?[0-9])$"
+    },
+    "page": {
+      "type": "string",
+      "pattern": "^[0-9]{1,9}$"
+    },
+    "payer_party_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contract_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "period_reference": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+    }
+  },
+  "oneOf": [
+    {
+      "required": [
+        "payer_party_key"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "contract_key"
+            ]
+          },
+          {
+            "required": [
+              "period_reference"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "required": [
+        "contract_key",
+        "period_reference"
+      ],
+      "not": {
+        "required": [
+          "payer_party_key"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}
