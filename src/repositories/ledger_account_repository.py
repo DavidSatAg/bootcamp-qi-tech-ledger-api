@@ -321,10 +321,15 @@ class LedgerAccountRepository:
         return self.session.query(func.clock_timestamp()).scalar()
 
     def get_by_key_for_update(self, ledger_account_key: str) -> LedgerAccount:
-        """A conta da chave, relida do banco, ou None (fatia 14, RN-04): a
-        primeira leitura da conta na mudança de status, e o `from_status`
-        sai fresco.
+        """A conta da chave, travada até o fim da transação e relida do
+        banco, ou None (fatia 14, RN-04): a primeira leitura da conta na
+        mudança de status, e o `from_status` sai fresco.
 
+        `FOR UPDATE`, e não `FOR NO KEY UPDATE`, como no
+        `lock_contract_accounts`: só ele conflita com o `FOR KEY SHARE` que a
+        FK do lançamento pega na conta. Com o mais fraco, um crédito gravado
+        no meio do encerramento escaparia da soma e da releitura do motor, e
+        a conta fecharia com saldo (S08 INV-01).
         A espera vai até o `lock_timeout`, com o `set_config(..., true)` do
         `lock_contract_accounts`; estourar sobe como está (`55P03`), e quem o
         traduz é o controller.
@@ -334,6 +339,7 @@ class LedgerAccountRepository:
         return (
             self.session.query(LedgerAccount)
             .filter(LedgerAccount.ledger_account_key == ledger_account_key)
+            .with_for_update()
             .populate_existing()
             .first()
         )

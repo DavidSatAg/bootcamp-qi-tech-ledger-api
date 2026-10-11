@@ -1,10 +1,18 @@
+from sqlalchemy.exc import OperationalError
+
 from controllers.base_controller import BaseController
 from dtos import LedgerAccountDTO
 from errors import LedgerAccountNotFound
 from errors import LedgerAccountInvalidTransition
+from errors import LedgerAccountHasBalance
+from errors import LockTimeout
 from models import LedgerAccountStatus
 from repositories import LedgerAccountRepository
 from utils.request_context import get_request_id
+
+# O SQLSTATE do Postgres para "lock_not_available": a trava não veio dentro
+# do lock_timeout.
+LOCK_NOT_AVAILABLE = "55P03"
 
 # As setas do diagrama da conta (06 :99-104): de onde se pode ir a onde.
 # O mesmo estado e tudo a partir de `closed` ficam de fora (fatia 14, D2).
@@ -52,9 +60,15 @@ class LedgerAccountController(BaseController):
 
     def change_status(self, ledger_account_key: str, payload: dict) -> dict:
         """Bloqueia, desbloqueia ou encerra a conta (fatia 14, RN-01): lê a
-        conta, confere a seta do diagrama (RN-02), grava o status e o evento,
-        e devolve a conta como o GET. O commit é a última linha."""
-        ledger_account = self.ledger_account_repository.get_by_key_for_update(ledger_account_key)
+        conta com trava (RN-04), confere a seta do diagrama (RN-02) e, no
+        encerramento, o saldo somado depois da trava (RN-03); grava o status
+        e o evento, e devolve a conta como o GET. O commit é a última linha."""
+        try:
+            ledger_account = self.ledger_account_repository.get_by_key_for_update(ledger_account_key)
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+                raise LockTimeout() from error
+            raise
 
         if ledger_account is None:
             raise LedgerAccountNotFound(ledger_account_key)
@@ -64,6 +78,11 @@ class LedgerAccountController(BaseController):
 
         if (from_status, to_status) not in VALID_TRANSITIONS:
             raise LedgerAccountInvalidTransition()
+
+        # Somado depois da trava (D0007 :46-47): nenhum lançamento entra no
+        # meio. Com saldo, nada foi escrito, e o middleware desfaz.
+        if to_status == LedgerAccountStatus.CLOSED and self.ledger_account_repository.get_balance(ledger_account) != 0:
+            raise LedgerAccountHasBalance()
 
         self.ledger_account_repository.change_status(
             ledger_account, to_status, payload["actor"], payload.get("reason"), get_request_id()

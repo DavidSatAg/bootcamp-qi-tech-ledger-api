@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from tests.utils import ObjectGenerator, PayloadGenerator, RequestGenerator
+from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
 
 
 def provision_contract() -> dict:
@@ -64,6 +64,75 @@ class TestLedgerAccountStatus:
 
         assert status == 201, response
         assert get_account(keys["COLLECTION"])["balance_in_cents"] == 1280000
+
+    def test_ledger_accounts_status_closes_and_refuses_invalid_transitions(self):
+        keys = provision_contract()
+
+        status, response = put_status(keys["IPTU"], "closed")
+
+        assert status == 200, response
+        assert response["status"] == "closed"
+        assert response["balance_in_cents"] == 0
+
+        for to_status in ["active", "blocked", "closed"]:
+            status, response = put_status(keys["IPTU"], to_status)
+
+            assert status == 409, (to_status, response)
+            assert response["code"] == "QIT001043", (to_status, response)
+
+        status, response = put_status(keys["CONDO"], "active")
+
+        assert status == 409, response
+        assert response["code"] == "QIT001043"
+
+        status, response = put_status(keys["WATER"], "blocked")
+
+        assert status == 200, response
+
+        status, response = put_status(keys["WATER"], "closed")
+
+        assert status == 200, response
+        assert response["status"] == "closed"
+        assert events(get_account(keys["IPTU"])) == ["active", "closed"]
+
+    def test_ledger_accounts_status_close_with_balance_conflicts(self):
+        keys = provision_contract()
+        status, response, _payload = ObjectGenerator.create_inflow(keys["contract_key"])
+        assert status == 201, response
+
+        status, response = put_status(keys["COLLECTION"], "closed")
+
+        assert status == 409, response
+        assert response["code"] == "QIT001037"
+        ledger_account = get_account(keys["COLLECTION"])
+        assert ledger_account["status"] == "active"
+        assert events(ledger_account) == ["active"]
+
+        status, response = put_status(keys["COLLECTION"], "blocked")
+
+        assert status == 200, response
+
+        status, response = put_status(keys["COLLECTION"], "closed")
+
+        assert status == 409, response
+        assert response["code"] == "QIT001037"
+        ledger_account = get_account(keys["COLLECTION"])
+        assert ledger_account["status"] == "blocked"
+        assert ledger_account["balance_in_cents"] == 640000
+
+    def test_ledger_accounts_status_lock_timeout_conflicts(self):
+        keys = provision_contract()
+
+        with DbUtils.hold_row_lock(keys["RENT"]):
+            status, response = put_status(keys["RENT"], "blocked")
+
+            assert status == 409, response
+            assert response["code"] == "QIT001011"
+
+        status, response = put_status(keys["RENT"], "blocked")
+
+        assert status == 200, response
+        assert response["status"] == "blocked"
 
     def test_ledger_accounts_status_refuses_bad_request(self):
         keys = provision_contract()
