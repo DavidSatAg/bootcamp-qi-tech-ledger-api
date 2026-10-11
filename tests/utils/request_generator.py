@@ -175,3 +175,10 @@ class RequestGenerator:
         response = ClientRequisition.send("POST", "/statement", payload=payload, headers=headers)
 
         return response.response_status, response.response_json
+
+    @staticmethod
+    def POST_statement_verify(payload: dict) -> BaseConnectorResponse:
+        """A verificação do hash: rota pública, vai SEM o `INTERNAL-TOKEN`."""
+        response = ClientRequisition.send("POST", "/statement/verify", payload=payload, headers={})
+
+        return response.response_status, response.response_json

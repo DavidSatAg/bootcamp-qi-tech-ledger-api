@@ -219,6 +219,11 @@ def create_app() -> FastAPI:
         methods=["POST"],
     )
     application.add_api_route(
+        "/statement/verify",
+        statement_resource.on_post_verify,
+        methods=["POST"],
+    )
+    application.add_api_route(
         "/statement/{statement_key}",
         statement_resource.on_get_by_key,
         methods=["GET"],

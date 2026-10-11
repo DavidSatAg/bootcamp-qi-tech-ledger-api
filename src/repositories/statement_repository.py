@@ -17,6 +17,15 @@ class StatementRepository:
     def get_by_key(self, statement_key: str) -> Statement:
         return self.session.query(Statement).filter(Statement.statement_key == statement_key).first()
 
+    def find_by_hash(self, content_hash: str) -> Statement:
+        """O extrato com esse `content_hash`, ou None (RN-11). Sem trava."""
+        return (
+            self.session.query(Statement)
+            .filter(Statement.content_hash == content_hash)
+            .order_by(Statement.id)
+            .first()
+        )
+
     def get_by_id(self, statement_id: int) -> Statement:
         return self.session.query(Statement).filter(Statement.id == statement_id).one()
 

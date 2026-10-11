@@ -40,6 +40,15 @@ class StatementDTO:
         return dto
 
     @staticmethod
+    def verification_to_dict(statement: Statement | None) -> dict:
+        """A resposta da verificação pública: só se casa e quando foi emitido,
+        nada mais (D0009 :100-103)."""
+        if statement is None:
+            return {"match": False}
+
+        return {"match": True, "issued_at": utc_with_z(statement.created_at)}
+
+    @staticmethod
     def line_to_dict(ledger_entry, ledger_transaction) -> dict:
         dto = dict()
         dto["ledger_transaction_key"] = ledger_transaction.ledger_transaction_key

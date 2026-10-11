@@ -28,6 +28,17 @@ class StatementResource:
             status_code=http_status.HTTP_201_CREATED,
         )
 
+    @SchemaHandler.validate("post_statement_verify.json")
+    def on_post_verify(self, payload: dict) -> JSONResponse:
+        """A verificação pública do hash (sem `INTERNAL-TOKEN`): sempre 200."""
+        controller = StatementController()
+        verification = controller.verify(payload["content_hash"])
+
+        return JSONResponse(
+            content=jsonable_encoder(verification),
+            status_code=http_status.HTTP_200_OK,
+        )
+
     def on_get_by_key(self, statement_key: str) -> JSONResponse:
         controller = StatementController()
         statement = controller.get_by_key(statement_key)

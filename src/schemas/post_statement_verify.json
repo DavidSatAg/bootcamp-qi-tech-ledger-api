@@ -1,0 +1,13 @@
+{
+  "title": "PostStatementVerify",
+  "type": "object",
+  "properties": {
+    "content_hash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "content_hash"
+  ],
+  "additionalProperties": false
+}

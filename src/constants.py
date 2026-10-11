@@ -34,6 +34,8 @@ BANKSLIP_API_TIMEOUT = int(os.environ.get("BANKSLIP_API_TIMEOUT", "5"))
 BYPASS_ENDPOINTS = [
     "/",
     "/health_check",
+    # Acrescentada pelo Ledger: a verificação pública do extrato (RFC :107; D0009 :94-98).
+    "/statement/verify",
 ]
 
 REQUIRED_VARIABLES = ["DATABASE_URL", "INTERNAL_TOKEN"]

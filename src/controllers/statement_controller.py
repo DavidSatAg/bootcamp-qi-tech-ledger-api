@@ -111,6 +111,13 @@ class StatementController(BaseController):
 
         return self._to_dict(statement, lines)
 
+    def verify(self, content_hash: str) -> dict:
+        """Há extrato com esse hash? Sem escrita e sem trava (RN-11). Hash
+        malformado não é erro: só não casa (decisão A4)."""
+        statement = self.statement_repository.find_by_hash(content_hash)
+
+        return StatementDTO.verification_to_dict(statement)
+
     def _issue(self, ledger_account, period_start: datetime, period_end: datetime) -> dict:
         """A trava, o corte, as linhas, o hash e o INSERT (RN-06, RN-08)."""
         cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
