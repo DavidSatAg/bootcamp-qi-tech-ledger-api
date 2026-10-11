@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
@@ -239,3 +240,27 @@ class TestWebhookSettlement:
         assert payout_link(payout)["outbox_status"] == "settled"
         assert balance(rent_key(contract_ledger)) == 0
         assert links_of_type(payout, "dispatch_return") == []
+
+    def test_webhooks_provider_chain_ends_in_settlement(self):
+        """CU-T1: a cadeia da competência, da entrada à liquidação. A
+        liquidação vem com o instante lido depois do 202, porque o repasse
+        tem a data-valor do agora (D5)."""
+        _contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
+        value_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"], value_date=value_date)
+
+        assert status == 204, response
+        outbox_key = payout["outbox"]["outbox_key"]
+        expected = [
+            ("inflow", 2, None, None),
+            ("split", 9, None, None),
+            ("payout", 2, outbox_key, "settled"),
+            ("settlement", 2, None, None),
+        ]
+        chain = trace(payout["ledger_transaction_key"])["chain"]
+        assert [
+            (link["ledger_transaction_type"], len(link["entries"]), link["outbox_key"], link["outbox_status"])
+            for link in chain
+        ] == expected
+        assert trace(chain[3]["ledger_transaction_key"])["chain"] == chain
