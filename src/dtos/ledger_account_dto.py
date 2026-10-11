@@ -13,9 +13,21 @@ class LedgerAccountDTO:
 
     @staticmethod
     def obj_to_dict(ledger_account: LedgerAccount, balance_in_cents: int) -> dict:
-        """A conta inteira: o resumo, mais o saldo."""
+        """A conta inteira: o resumo, o saldo e a trilha de status.
+
+        O evento não tem campo `status`: o que ele registra é a chegada a
+        `to_status`, e é esse o status que a trilha mostra.
+        """
         dto = LedgerAccountDTO.obj_to_simplified_dict(ledger_account)
         dto["balance_in_cents"] = balance_in_cents
+        dto["status_events"] = []
+
+        for status_event in ledger_account.status_events:
+            status_event_dto = dict()
+            status_event_dto["status"] = status_event.to_status.enumerator
+            status_event_dto["event_datetime"] = status_event.event_datetime.isoformat()
+
+            dto["status_events"].append(status_event_dto)
 
         return dto
 

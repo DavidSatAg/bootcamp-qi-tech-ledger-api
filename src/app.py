@@ -11,6 +11,7 @@ from middlewares import (
 )
 from resources import HealthCheckResource, SampleEntityResource
 from resources import LedgerAccountResource
+from resources import ContractLedgerResource
 from utils.logger import setup_logging
 
 
@@ -164,6 +165,13 @@ def create_app() -> FastAPI:
         "/ledger_accounts/{ledger_account_key}",
         ledger_account_resource.on_get_by_key,
         methods=["GET"],
+    )
+
+    contract_ledger_resource = ContractLedgerResource()
+    application.add_api_route(
+        "/contract_ledgers",
+        contract_ledger_resource.on_post,
+        methods=["POST"],
     )
 
     register_error_handlers(application)

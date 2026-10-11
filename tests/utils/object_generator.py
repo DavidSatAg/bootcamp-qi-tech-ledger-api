@@ -23,3 +23,13 @@ class ObjectGenerator:
         assert status == 202
 
         return response
+
+    @staticmethod
+    def create_contract_ledger(**kwargs) -> tuple:
+        """Provisiona um contrato no ledger: o cenário de toda fatia de dinheiro.
+
+        Devolve (status, corpo) sem conferir o status: quem chama decide
+        se esperava 201, 200 ou uma recusa.
+        """
+        contract_ledger_payload = PayloadGenerator.create_contract_ledger_payload(**kwargs)
+        return RequestGenerator.POST_contract_ledgers(contract_ledger_payload)

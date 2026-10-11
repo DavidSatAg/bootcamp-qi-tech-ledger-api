@@ -27,3 +27,4 @@ class LedgerAccount(Base):
     ledger_account_type = relationship("LedgerAccountType", foreign_keys=[ledger_account_type_id], lazy="selectin")
     ledger_account_status = relationship("LedgerAccountStatus", foreign_keys=[ledger_account_status_id], lazy="selectin")
     purpose_code = relationship("PurposeCode", foreign_keys=[purpose_code_id], lazy="selectin")
+    status_events = relationship("LedgerAccountStatusEvent", lazy="selectin")

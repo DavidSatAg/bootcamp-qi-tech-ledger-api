@@ -47,3 +47,93 @@ class PayloadGenerator:
     def create_new_status_payload(new_status: str = None) -> dict:
         payload = {"status": new_status}
         return payload
+
+    @staticmethod
+    def create_contract_ledger_payload(
+        contract_key: str = None,
+        split_version: int = None,
+        rent_amount_in_cents: int = None,
+        platform_fee_percentage: str = None,
+        items: list = None,
+        actor: str = None,
+    ) -> dict:
+        """O provisionamento do caso do remodelagem/05 (o exemplo do 01b §3).
+
+        Só o `contract_key` muda a cada chamada: um `uuid4` novo, para
+        que cada teste tenha o seu contrato. O cliente é sempre a
+        Imobiliária Alfa (c1c1…), e os beneficiários são as chaves
+        mágicas do guia 00 §2.
+        """
+        if contract_key is None:
+            contract_key = str(uuid4())
+
+        if split_version is None:
+            split_version = 1
+
+        if rent_amount_in_cents is None:
+            rent_amount_in_cents = 500000
+
+        if platform_fee_percentage is None:
+            platform_fee_percentage = "1.0000"
+
+        if items is None:
+            items = [
+                {
+                    "purpose_code": "RENT",
+                    "beneficiary_party_key": "22222222-2222-4222-8222-222222222222",
+                    "beneficiary_role": "landlord",
+                    "type": "remainder",
+                },
+                {
+                    "purpose_code": "OWN",
+                    "beneficiary_party_key": "11111111-1111-4111-8111-111111111111",
+                    "beneficiary_role": "administrator",
+                    "type": "percentage",
+                    "value": "10.0000",
+                },
+                {
+                    "purpose_code": "IPTU",
+                    "beneficiary_party_key": "44444444-4444-4444-8444-444444444444",
+                    "beneficiary_role": "provider",
+                    "type": "fixed",
+                    "value": 30000,
+                },
+                {
+                    "purpose_code": "CONDO",
+                    "beneficiary_party_key": "55555555-5555-4555-8555-555555555555",
+                    "beneficiary_role": "provider",
+                    "type": "fixed",
+                    "value": 80000,
+                },
+                {
+                    "purpose_code": "WATER",
+                    "beneficiary_party_key": "66666666-6666-4666-8666-666666666666",
+                    "beneficiary_role": "provider",
+                    "type": "fixed",
+                    "value": 12000,
+                },
+                {
+                    "purpose_code": "ELECTRICITY",
+                    "beneficiary_party_key": "77777777-7777-4777-8777-777777777777",
+                    "beneficiary_role": "provider",
+                    "type": "fixed",
+                    "value": 18000,
+                },
+            ]
+
+        if actor is None:
+            actor = "contract-api"
+
+        payload = {
+            "contract_key": contract_key,
+            "client_key": "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1",
+            "client_party_key": "11111111-1111-4111-8111-111111111111",
+            "split_version": split_version,
+            "rent_amount_in_cents": rent_amount_in_cents,
+            "platform_fee_percentage": platform_fee_percentage,
+            "items": items,
+            "actor": actor,
+            "reason": "ativação do contrato ALFA-2026-0042",
+        }
+
+        return payload
