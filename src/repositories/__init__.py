@@ -6,3 +6,4 @@ from repositories.ledger_transaction_repository import LedgerTransactionReposito
 from repositories.ledger_entry_repository import LedgerEntryRepository
 from repositories.idempotency_record_repository import IdempotencyRecordRepository
 from repositories.statement_repository import StatementRepository
+from repositories.outbox_repository import OutboxRepository

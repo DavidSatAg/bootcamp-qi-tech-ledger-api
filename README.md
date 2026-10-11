@@ -771,6 +771,22 @@ nova: é um limite declarado.
    interpreta status, não tenta de novo, não guarda chave, não abre
    transação.
 
+### A outbox com despacho inline (`POST /transfers/payout` por Pix, fatia 09)
+
+1. *Princípio da base tocado:* a base faz um commit, na última linha do
+   controller.
+2. *Por que não funciona sem:* chamar o provedor dentro da transação
+   prende a trava da conta durante a chamada de rede; commitar e chamar
+   sem outbox perde o repasse se o processo cair entre os dois; e ler o
+   dono da conta no banco antes de chamar o Cadastro já abre uma
+   transação.
+3. *A peça, e por que é a menor:* a outbox gravada no mesmo commit das
+   pernas, mais dois commits de estado (`in_flight`, resultado) e o commit
+   que fecha a leitura: quatro commits numa requisição, sem fila nem
+   agendador.
+4. *O que ela não faz:* não reenvia, não tem backoff, não marca `dead` nem
+   liquida, e não segura trava durante a chamada externa.
+
 ## 10. Como subir o Ledger
 
 Aqui o `.env` **não é opcional**: é nele que estão as portas do Ledger e

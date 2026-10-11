@@ -2,11 +2,13 @@ from datetime import datetime, timezone
 
 from connectors import PartyConnector
 from controllers.base_controller import BaseController
+from controllers.outbox_controller import OutboxController
 from controllers.posting_controller import PostingController
-from dtos import LedgerTransactionDTO
+from dtos import LedgerTransactionDTO, OutboxDTO
 from errors import LedgerAccountNotFound, OwnerNotActive, OwnerWithoutPixKey, PartyServiceUnavailable
 from models import LedgerAccountType, LedgerEntry, LedgerTransactionType, PurposeCode
-from repositories import LedgerAccountRepository, LedgerTransactionRepository
+from repositories import LedgerAccountRepository, LedgerTransactionRepository, OutboxRepository
+from utils.request_context import get_request_id
 
 ENDPOINT = "POST /transfers/payout"
 
@@ -29,14 +31,18 @@ class PayoutController(BaseController):
         super().__init__(__name__)
         self.ledger_account_repository = LedgerAccountRepository(self.context)
         self.ledger_transaction_repository = LedgerTransactionRepository(self.context)
+        self.outbox_repository = OutboxRepository(self.context)
         self.party_connector = PartyConnector()
         # O 038/039 do Cadastro, lido antes do BEGIN e levantado pelo
         # `after_lock`, depois do passo 1: gravado na chave (D1).
         self.owner_error = None
+        # A outbox que ESTA requisição gravou; vazia no replay (RN-06, D4).
+        self.outbox = None
 
     def create(self, payload: dict, idempotency_key: str, raw_body: bytes) -> dict:
-        """Confere a chave, acha a origem, fecha a leitura e entrega as
-        pernas ao motor (RN-01)."""
+        """Confere a chave, acha a origem, fecha a leitura, confere o dono no
+        Cadastro e entrega as pernas ao motor (RN-01); depois do commit
+        dele, despacha a outbox que gravou (RN-07)."""
         PostingController.require_idempotency_key(idempotency_key)
         source = self._find_source(payload)
 
@@ -89,11 +95,43 @@ class PayoutController(BaseController):
             purpose_pairs,
             SUCCESS_STATUS,
             after_lock=self._raise_owner_error,
+            after_write=lambda ledger_transaction: self._create_outbox(ledger_transaction, owner_party_key, payload),
         )
+
+        # Só despacha a outbox criada agora: o replay não reenvia (D4).
+        outbox = None
+        if self.outbox is not None:
+            outbox_controller = OutboxController()
+            outbox = outbox_controller.dispatch(self.outbox)
 
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
-        return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+        if outbox is None:
+            outbox = self.outbox_repository.get_by_transaction(ledger_transaction.id)
+
+        payout = LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+        payout["outbox"] = OutboxDTO.obj_to_dict(outbox)
+
+        return payout
+
+    def _create_outbox(self, ledger_transaction, owner_party_key: str, payload: dict) -> None:
+        """Depois do passo 8, no SAVEPOINT do motor: a outbox entra no mesmo
+        commit das pernas (RN-06; D0006 :44-46). O payload leva só valor e
+        referência: a chave Pix é lida do Cadastro a cada envio."""
+        ledger_transaction_key = ledger_transaction.ledger_transaction_key
+
+        self.outbox = self.outbox_repository.create(
+            ledger_transaction,
+            beneficiary_party_key=owner_party_key,
+            dispatch_idempotency_key=f"{ledger_transaction_key}-outbox-1",
+            payload={
+                "amount_in_cents": payload["amount_in_cents"],
+                "ledger_transaction_key": ledger_transaction_key,
+            },
+            actor=payload["actor"],
+            reason=payload.get("reason"),
+            trace_id=get_request_id(),
+        )
 
     def _check_owner(self, owner_party_key: str):
         """O dono no Cadastro, sem transação aberta (RN-03; 01b :162-167).

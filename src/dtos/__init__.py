@@ -5,3 +5,4 @@ from dtos.ledger_transaction_dto import LedgerTransactionDTO
 from dtos.trace_dto import TraceDTO
 from dtos.integrity_dto import IntegrityDTO
 from dtos.statement_dto import StatementDTO
+from dtos.outbox_dto import OutboxDTO

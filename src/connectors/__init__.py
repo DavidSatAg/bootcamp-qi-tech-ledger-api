@@ -1,2 +1,3 @@
 from connectors.bankslip_connector import BankSlipConnector
 from connectors.party_connector import PartyConnector
+from connectors.provider_connector import ProviderConnector

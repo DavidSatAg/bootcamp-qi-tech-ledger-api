@@ -80,6 +80,7 @@ class PostingController(BaseController):
         purpose_pairs: list,
         success_status: int,
         after_lock=None,
+        after_write=None,
     ) -> str:
         """Posta uma transação e devolve a `ledger_transaction_key`.
 
@@ -89,7 +90,9 @@ class PostingController(BaseController):
         `legs` = [(LedgerAccount, "D" | "C", centavos)];
         `purpose_pairs` = [(origem, destino)], contas a conferir na
         `purpose_rule`; `after_lock`, se vier, é a conferência da rota que
-        depende da trava (passo 5), chamada sem argumentos logo depois dela.
+        depende da trava (passo 5), chamada sem argumentos logo depois dela;
+        `after_write`, se vier, recebe a transação gravada depois do passo 8,
+        no mesmo SAVEPOINT (a outbox do repasse, fatia 09 RN-06).
         O commit é a última linha.
 
         O erro também é gravado (RN-11, desvio D-02), e por isso este é o
@@ -115,7 +118,7 @@ class PostingController(BaseController):
 
         execution = self.session.begin_nested()
         try:
-            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs, after_lock)
+            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs, after_lock, after_write)
         except Exception as error:
             execution.rollback()
             qi_exception = self._as_qi_exception(error)
@@ -131,7 +134,7 @@ class PostingController(BaseController):
 
         return ledger_transaction_key
 
-    def _execute(self, transaction: dict, legs: list, purpose_pairs: list, after_lock) -> str:
+    def _execute(self, transaction: dict, legs: list, purpose_pairs: list, after_lock, after_write) -> str:
         """Passos 2 a 8, nesta ordem: o par proibido sai antes da trava, e o
         que depende da trava, depois dela (guia do Ledger §5); e a releitura
         do status depois do 7 (RN-08 da fatia 08)."""
@@ -147,6 +150,9 @@ class PostingController(BaseController):
         ledger_transaction = self._write(transaction, legs)
         self._recheck_accounts(legs)
         self._check_balanced(ledger_transaction)
+
+        if after_write is not None:
+            after_write(ledger_transaction)
 
         return ledger_transaction.ledger_transaction_key
 

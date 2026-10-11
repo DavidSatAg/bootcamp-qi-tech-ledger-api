@@ -8,6 +8,8 @@ PENDING_PARTY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 UNKNOWN_PARTY = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 PARTY_DOWN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 WITHOUT_PIX_KEY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+PIX_TIMEOUT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+PIX_ERROR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 OTHER_AMOUNT = 80000
 
 
@@ -41,6 +43,22 @@ def balance(ledger_account_key: str) -> int:
 def clearing_key() -> str:
     """A `clearing/TRANSIT` da Imobiliária Alfa: o destino de todo repasse dela."""
     return ObjectGenerator.get_client_account_key(ALFA_CLIENT, "TRANSIT")
+
+
+def trace(ledger_transaction_key: str) -> dict:
+    status, response = RequestGenerator.GET_transfer_trace(ledger_transaction_key)
+    assert status == 200, response
+
+    return response
+
+
+def pix_dispatches(dispatch_idempotency_key: str) -> list:
+    """As chamadas `POST /pix` que o provedor recebeu com esta chave de despacho."""
+    return [
+        (headers, body)
+        for headers, body in RequestGenerator.GET_mock_requests("provider-mock", "/pix")
+        if body is not None and body.get("dispatch_idempotency_key") == dispatch_idempotency_key
+    ]
 
 
 class TestPayoutPix:
@@ -170,3 +188,62 @@ class TestPayoutPix:
         assert status == 422, response
         assert response["code"] == "QIT001039"
         assert balance(rent) == 450000
+
+    def test_transfers_payout_pix_debits_to_clearing(self):
+        rent = rent_key(ObjectGenerator.create_divided_contract(ANA))
+        clearing_before = balance(clearing_key())
+
+        status, response, _payload = ObjectGenerator.create_payout(rent)
+
+        assert status == 202, response
+        assert response["ledger_transaction_type"] == "payout"
+        assert response["period_reference"] == "2026-09"
+        assert response["outbox"]["beneficiary_party_key"] == ANA
+        assert balance(rent) == 0
+        assert balance(clearing_key()) == clearing_before + 450000
+        entries = trace(response["ledger_transaction_key"])["entries"]
+        assert [
+            (entry["direction"], entry["purpose_code"], entry["amount_in_cents"], entry["ledger_account_type"])
+            for entry in entries
+        ] == [("D", "RENT", 450000, "earmark"), ("C", "TRANSIT", 450000, "clearing")]
+        assert (entries[0]["owner_party_key"], entries[0]["owner_role"]) == (ANA, "landlord")
+        assert entries[1]["owner_party_key"] is None
+
+    def test_transfers_payout_dispatches_once(self):
+        rent = rent_key(ObjectGenerator.create_divided_contract(ANA))
+
+        status, response, _payload = ObjectGenerator.create_payout(rent)
+
+        assert status == 202, response
+        outbox = response["outbox"]
+        assert outbox["outbox_status"] == "sent"
+        assert outbox["attempt_count"] == 0
+        payout_trace = trace(response["ledger_transaction_key"])
+        dispatches = pix_dispatches(outbox["dispatch_idempotency_key"])
+        assert len(dispatches) == 1, dispatches
+        headers, body = dispatches[0]
+        assert body["pix_key"] == "ana.locadora@example.com"
+        assert body["amount_in_cents"] == 450000
+        assert headers["x-request-id"] == payout_trace["transaction"]["trace_id"]
+        chain = payout_trace["chain"]
+        assert [link["ledger_transaction_type"] for link in chain] == ["inflow", "split", "payout"]
+        assert chain[2]["outbox_key"] == outbox["outbox_key"]
+        assert chain[2]["outbox_status"] == "sent"
+
+    def test_transfers_payout_provider_failure_stays_pending(self):
+        """Provedor em timeout ou com erro: o débito fica, a outbox volta a
+        `pending` com uma tentativa, e ninguém tenta de novo nesta requisição."""
+        for party_key in [PIX_TIMEOUT, PIX_ERROR]:
+            rent = rent_key(ObjectGenerator.create_divided_contract(party_key))
+            clearing_before = balance(clearing_key())
+
+            status, response, _payload = ObjectGenerator.create_payout(rent)
+
+            assert status == 202, (party_key, response)
+            outbox = response["outbox"]
+            assert outbox["outbox_status"] == "pending", (party_key, outbox)
+            assert outbox["attempt_count"] == 1, (party_key, outbox)
+            assert balance(rent) == 0
+            assert balance(clearing_key()) == clearing_before + 450000
+            assert len(pix_dispatches(outbox["dispatch_idempotency_key"])) == 1
+            assert trace(response["ledger_transaction_key"])["chain"][-1]["outbox_status"] == "pending"
