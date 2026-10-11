@@ -278,3 +278,24 @@ class LedgerAccountRepository:
         rows = query.group_by(LedgerAccount.id).having(balance < 0).order_by(LedgerAccount.id).all()
 
         return [(ledger_account, int(balance_in_cents)) for ledger_account, balance_in_cents in rows]
+
+    def lock_for_update(self, ledger_account_ids: list, lock_timeout: str) -> list:
+        """Trava as contas pedidas, em `id` crescente, esperando no máximo
+        `lock_timeout` (passo 4 do motor; D0007 :35-55). Devolve os `id`s.
+
+        O Postgres não liga parâmetro em `SET LOCAL`: o `set_config(..., true)`
+        é o mesmo `SET LOCAL`, e vale até o fim da transação (ou do SAVEPOINT
+        que o desfizer). Estourar o tempo sobe como está (`55P03`): quem o
+        traduz é o motor. As travas soltam no commit ou no rollback.
+        """
+        self.session.query(func.set_config("lock_timeout", lock_timeout, True)).scalar()
+
+        rows = (
+            self.session.query(LedgerAccount.id)
+            .filter(LedgerAccount.id.in_(ledger_account_ids))
+            .order_by(LedgerAccount.id)
+            .with_for_update()
+            .all()
+        )
+
+        return [ledger_account_id for (ledger_account_id,) in rows]

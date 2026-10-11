@@ -4,7 +4,7 @@ from decimal import ROUND_FLOOR, Decimal
 from controllers.base_controller import BaseController
 from controllers.posting_controller import PostingController
 from dtos import LedgerTransactionDTO
-from errors import ContractNotProvisioned, InvalidSchema
+from errors import ContractNotProvisioned, InvalidSchema, PeriodAlreadySplit
 from models import LedgerEntry, LedgerTransactionType, PurposeCode, SplitSnapshot
 from repositories import LedgerAccountRepository, LedgerTransactionRepository, SplitSnapshotRepository
 
@@ -60,12 +60,23 @@ class SplitController(BaseController):
 
         posting_controller = PostingController()
         ledger_transaction_key = posting_controller.post(
-            idempotency, transaction, legs, purpose_pairs, SUCCESS_STATUS
+            idempotency,
+            transaction,
+            legs,
+            purpose_pairs,
+            SUCCESS_STATUS,
+            after_lock=lambda: self._check_period_not_split(payload),
         )
 
         ledger_transaction = self.ledger_transaction_repository.get_by_key(ledger_transaction_key)
 
         return LedgerTransactionDTO.obj_to_dict(ledger_transaction)
+
+    def _check_period_not_split(self, payload: dict) -> None:
+        """Passo 5, com a COLLECTION travada: quem esperou a trava vê a divisão
+        de quem a soltou (READ COMMITTED) e para aqui, antes do SUM (05 :401)."""
+        if self.ledger_transaction_repository.exists_split(payload["contract_key"], payload["period_reference"]):
+            raise PeriodAlreadySplit()
 
     def _legs(self, collection, split_rows: list) -> tuple:
         """As pernas e os pares da divisão, na ordem do remodelagem/05 (RN-04):

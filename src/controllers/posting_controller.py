@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 
 import errors
+from constants import LOCK_TIMEOUT
 from controllers.base_controller import BaseController
 from errors import (
     CurrencyMismatch,
@@ -16,7 +17,7 @@ from errors import (
     QIException,
     TransactionDoesNotBalance,
 )
-from models import LedgerAccountStatus
+from models import LedgerAccountStatus, LedgerAccountType, LedgerEntry
 from repositories import (
     IdempotencyRecordRepository,
     LedgerAccountRepository,
@@ -72,6 +73,7 @@ class PostingController(BaseController):
         legs: list,
         purpose_pairs: list,
         success_status: int,
+        after_lock=None,
     ) -> str:
         """Posta uma transação e devolve a `ledger_transaction_key`.
 
@@ -80,7 +82,9 @@ class PostingController(BaseController):
         preenche, com `ledger_transaction_type` como enumerador;
         `legs` = [(LedgerAccount, "D" | "C", centavos)];
         `purpose_pairs` = [(origem, destino)], contas a conferir na
-        `purpose_rule`. O commit é a última linha.
+        `purpose_rule`; `after_lock`, se vier, é a conferência da rota que
+        depende da trava (passo 5), chamada sem argumentos logo depois dela.
+        O commit é a última linha.
 
         O erro também é gravado (RN-11, desvio D-02), e por isso este é o
         único controller que commita no caminho de erro:
@@ -105,7 +109,7 @@ class PostingController(BaseController):
 
         execution = self.session.begin_nested()
         try:
-            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs)
+            ledger_transaction_key = self._execute(transaction, legs, purpose_pairs, after_lock)
         except Exception as error:
             execution.rollback()
             qi_exception = self._as_qi_exception(error)
@@ -121,12 +125,16 @@ class PostingController(BaseController):
 
         return ledger_transaction_key
 
-    def _execute(self, transaction: dict, legs: list, purpose_pairs: list) -> str:
-        """Passos 2, 3, 7 e 8, e a releitura do status depois do 7 (RN-08 da
-        fatia 08). Os passos 4 a 6 (trava e saldo) entram entre o 3 e o 7
-        quando houver débito de passivo (fatia 07)."""
+    def _execute(self, transaction: dict, legs: list, purpose_pairs: list, after_lock) -> str:
+        """Passos 2 a 8, nesta ordem: o par proibido sai antes da trava, e o
+        que depende da trava, depois dela (guia do Ledger §5); e a releitura
+        do status depois do 7 (RN-08 da fatia 08)."""
         self._check_accounts(legs)
         self._check_purpose_pairs(purpose_pairs)
+        self._lock_net_debits(legs)
+
+        if after_lock is not None:
+            after_lock()
 
         ledger_transaction = self._write(transaction, legs)
         self._recheck_accounts(legs)
@@ -256,6 +264,37 @@ class PostingController(BaseController):
 
             if purpose_rule.requires_same_contract and source.contract_key != target.contract_key:
                 raise PurposePairNotAllowed(source_purpose_code, target_purpose_code)
+
+    def _lock_net_debits(self, legs: list) -> list:
+        """Passo 4: trava, em `id` crescente e com `lock_timeout`, as contas
+        de passivo e patrimônio cujo líquido nas pernas é débito (D0007
+        :35-55). Devolve [(conta, líquido devedor)], em `id`; nenhuma conta,
+        nenhum SQL."""
+        accounts = dict()
+        net_debits = dict()
+
+        for ledger_account, direction, amount_in_cents in legs:
+            signed_amount = amount_in_cents
+            if direction == LedgerEntry.CREDIT:
+                signed_amount = -amount_in_cents
+            accounts[ledger_account.id] = ledger_account
+            net_debits[ledger_account.id] = net_debits.get(ledger_account.id, 0) + signed_amount
+
+        locked = [
+            (accounts[ledger_account_id], net_debits[ledger_account_id])
+            for ledger_account_id in sorted(accounts)
+            if accounts[ledger_account_id].ledger_account_type.side != LedgerAccountType.ASSET
+            and net_debits[ledger_account_id] > 0
+        ]
+
+        if not locked:
+            return locked
+
+        self.ledger_account_repository.lock_for_update(
+            [ledger_account.id for ledger_account, _net_debit in locked], LOCK_TIMEOUT
+        )
+
+        return locked
 
     def _write(self, transaction: dict, legs: list):
         """Passo 7: o cabeçalho e as pernas.

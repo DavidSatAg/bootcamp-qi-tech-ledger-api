@@ -79,3 +79,18 @@ class LedgerTransactionRepository:
             .order_by(LedgerTransaction.value_date, LedgerTransaction.id)
             .all()
         )
+
+    def exists_split(self, contract_key: str, period_reference: str) -> bool:
+        """Se já há `split` do contrato na competência. Sem trava: quem
+        pergunta já segura a da COLLECTION (passo 5 do motor)."""
+        query = (
+            self.session.query(LedgerTransaction.id)
+            .join(LedgerTransaction.ledger_transaction_type)
+            .filter(
+                LedgerTransaction.contract_key == contract_key,
+                LedgerTransaction.period_reference == period_reference,
+                LedgerTransactionType.enumerator == LedgerTransactionType.SPLIT,
+            )
+        )
+
+        return self.session.query(query.exists()).scalar()

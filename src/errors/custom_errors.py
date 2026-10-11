@@ -278,3 +278,14 @@ class LedgerAccountHasBalance(QIException):
         description = "An account of this contract has non-zero balance."
         translation = "conta com saldo não pode ser encerrada"
         super().__init__(title, self.code, http_status, description, translation)
+
+
+class PeriodAlreadySplit(QIException):
+    code = "QIT001036"
+
+    def __init__(self) -> None:
+        title = "Period already split"
+        http_status = 409
+        description = "The contract period was already split."
+        translation = "competência já dividida"
+        super().__init__(title, self.code, http_status, description, translation)

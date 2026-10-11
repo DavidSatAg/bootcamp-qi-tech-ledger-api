@@ -149,6 +149,33 @@ class TestSplitCreate:
         ]
         assert debits_and_credits(entries) == (640000, 640000)
 
+    def test_transfers_split_same_period_twice_conflicts(self):
+        contract_ledger = provision_contract()
+        contract_key = contract_ledger["contract_key"]
+        keys = account_keys(contract_ledger)
+        inflow(contract_key)
+        split(contract_key)
+
+        status, response, _payload = ObjectGenerator.create_split(contract_key, idempotency_key=str(uuid4()))
+
+        assert status == 409, response
+        assert response["code"] == "QIT001036"
+        assert balance(keys["RENT"]) == 450000
+
+    def test_transfers_split_replays_same_key(self):
+        contract_ledger = provision_contract()
+        contract_key = contract_ledger["contract_key"]
+        keys = account_keys(contract_ledger)
+        inflow(contract_key)
+        idempotency_key = str(uuid4())
+        first = split(contract_key, idempotency_key=idempotency_key)
+
+        status, response, _payload = ObjectGenerator.create_split(contract_key, idempotency_key=idempotency_key)
+
+        assert status == 201, response
+        assert response["ledger_transaction_key"] == first["ledger_transaction_key"]
+        assert balance(keys["RENT"]) == 450000
+
     def test_transfers_split_unknown_contract_returns_404(self):
         status, response, _payload = ObjectGenerator.create_split(str(uuid4()))
 
