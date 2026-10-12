@@ -753,7 +753,7 @@ lista cheia: a suíte prova só que ela sai vazia. O negativo **com** estorno,
 que não entra na lista, é o caso que a fatia 11 prova (CU-H2). Não é peça
 nova: é um limite declarado.
 
-### A trava de uma linha no teste (`DbUtils.hold_row_lock`, fatia 08)
+### A trava de uma linha nos testes (`DbUtils.hold_row_lock`, fatia 08)
 
 1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco;
    nunca monta cenário.
@@ -802,7 +802,7 @@ A mesma peça prova o `409 QIT001011` da divisão (fatia 07): o teste segura a
    chamada externa. Com a fila, o despacho reivindica a linha antes de
    enviar e pode voltar sem despachar, se outro já a reivindicou.
 
-### A trava da transação original no teste (`DbUtils.hold_transaction_lock`, fatia 11)
+### A trava da transação original nos testes (`DbUtils.hold_transaction_lock`, fatia 11)
 
 1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco;
    nunca monta cenário.
@@ -829,7 +829,7 @@ estorná-la inteira e alocar de novo (D0005). O `400` é um compromisso: o
 correto seria um `422`, mas nenhum código do guia cabe, e nenhuma fatia
 inventa código. Não é peça nova: é um limite declarado.
 
-### A fila da outbox (`POST /outbox/dispatch`, fatia 14)
+### A fila de redespacho (`POST /outbox/dispatch`, fatia 14)
 
 1. *Princípio da base tocado:* a base faz um commit, na última linha do
    controller.
@@ -843,7 +843,7 @@ inventa código. Não é peça nova: é um limite declarado.
    (o operador estorna pela rota de estorno), não tira linha de
    `in_flight` e não segura trava durante a chamada externa.
 
-### A trava de uma outbox no teste (`DbUtils.hold_outbox_lock`, fatia 14)
+### A trava de uma linha da outbox nos testes (`DbUtils.hold_outbox_lock`, fatia 14)
 
 1. *Princípio da base tocado:* o `db_utils` dos testes só zera o banco.
 2. *Por que não funciona sem:* duas reivindicações simultâneas da mesma
@@ -854,7 +854,7 @@ inventa código. Não é peça nova: é um limite declarado.
 4. *O que ela não faz:* não escreve, não executa SQL livre, não lê dado
    para asserção, não monta cenário.
 
-### O provedor que aceita depois (`RequestGenerator.accept_pix`, fatia 14)
+### O aceite temporário no mock do provedor (`RequestGenerator.accept_pix`, fatia 14)
 
 1. *Princípio da base tocado:* o mock responde fixo por chave Pix.
 2. *Por que não funciona sem:* nenhum mock falha e depois aceita, e o
