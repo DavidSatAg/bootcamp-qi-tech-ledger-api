@@ -28,3 +28,33 @@ class RandomGenerator:
         )
 
         return cnpj_number
+
+    # ────────────────────────────────────────────────────────────────
+    # CPF SÓ DÍGITOS, para cadastrar parte no Cadastro de verdade
+    # (ponto de integração, tests/e2e/). Mesmo comportamento do
+    # RandomGenerator.generate_cpf_digits(ending=...) do bootcampparty.
+    # ────────────────────────────────────────────────────────────────
+    # O bureau mockado do Cadastro decide pelo final do documento (guia
+    # 00 §2): 00 recusa, 99 fica fora do ar, 98 e 97 falham uma vez. Sem
+    # `ending`, esses finais são sorteados de novo; com `ending`, o sorteio
+    # repete até o documento terminar exatamente nele.
+    RESERVED_ENDINGS = ("00", "97", "98", "99")
+
+    @staticmethod
+    def _cpf_digits() -> str:
+        cpf = [random.randrange(10) for _ in range(9)]
+        for _ in range(2):
+            value = sum([(len(cpf) + 1 - i) * v for i, v in enumerate(cpf)]) % 11
+            cpf.append(11 - value if value > 1 else 0)
+        return "".join(str(x) for x in cpf)
+
+    @staticmethod
+    def generate_cpf_digits(ending: str = None) -> str:
+        while True:
+            document_number = RandomGenerator._cpf_digits()
+
+            if ending is None and document_number[-2:] not in RandomGenerator.RESERVED_ENDINGS:
+                return document_number
+
+            if ending is not None and document_number.endswith(ending):
+                return document_number
