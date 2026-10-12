@@ -8,13 +8,21 @@ APPEND_ONLY_TABLES = [
     "split_snapshot",
     "ledger_account_status_event",
     "outbox_status_event",
+    "statement",
 ]
+# A `ledger_transaction` fica fora daqui: outras tabelas a referenciam, e o
+# Postgres recusa o TRUNCATE pela chave estrangeira antes de chegar ao
+# gatilho `_no_truncate`. A prova dela é por linha, em ROW_GUARDED_TABLES.
 
-# As três que a fatia 05a já consegue povoar por HTTP (CU-F9).
+# Todas as append-only, povoadas por HTTP no cenário do teste (CU-F9).
 ROW_GUARDED_TABLES = [
     "ledger_entry",
     "split_snapshot",
     "ledger_account_status_event",
+    "ledger_transaction",
+    "statement",
+    "provider_event",
+    "outbox_status_event",
 ]
 
 
@@ -30,7 +38,7 @@ class TestAppendOnlyTriggers:
             DbUtils.truncate(tabela)
 
     def test_append_only_tables_refuse_truncate(self):
-        """As cinco tabelas append-only recusam TRUNCATE, cada uma com o proprio nome."""
+        """As tabelas append-only recusam TRUNCATE, cada uma com o proprio nome."""
         for tabela in APPEND_ONLY_TABLES:
             with pytest.raises(Exception, match=f"{tabela} e append-only"):
                 DbUtils.truncate(tabela)
@@ -47,12 +55,21 @@ class TestAppendOnlyTriggers:
         """CU-F9: nem UPDATE nem DELETE mudam uma linha gravada.
 
         O gatilho `<tabela>_no_change` só dispara com linha, por isso o
-        cenário vem antes: um contrato provisionado e uma entrada.
+        cenário vem antes: um contrato provisionado, uma entrada, o extrato
+        da conta de arrecadação e um repasse liquidado pelo provedor (o
+        aviso grava `provider_event`; o repasse, `outbox_status_event`).
         """
         status, contract_ledger = ObjectGenerator.create_contract_ledger()
         assert status == 201, contract_ledger
         status, response, _payload = ObjectGenerator.create_inflow(contract_ledger["contract_key"])
         assert status == 201, response
+        accounts = {account["purpose_code"]: account["ledger_account_key"] for account in contract_ledger["accounts"]}
+        status, response, _payload = ObjectGenerator.create_statement(accounts["COLLECTION"])
+        assert status == 201, response
+
+        _contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
+        status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"])
+        assert status == 204, response
 
         for tabela in ROW_GUARDED_TABLES:
             with pytest.raises(Exception, match=f"{tabela} e append-only"):

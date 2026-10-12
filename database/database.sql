@@ -303,6 +303,10 @@ CREATE TRIGGER ledger_account_status_event_no_change BEFORE UPDATE OR DELETE ON 
 CREATE TRIGGER ledger_account_status_event_no_truncate BEFORE TRUNCATE ON ledger_account_status_event FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
 CREATE TRIGGER outbox_status_event_no_change BEFORE UPDATE OR DELETE ON outbox_status_event FOR EACH ROW EXECUTE FUNCTION append_only_guard();
 CREATE TRIGGER outbox_status_event_no_truncate BEFORE TRUNCATE ON outbox_status_event FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER ledger_transaction_no_change BEFORE UPDATE OR DELETE ON ledger_transaction FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER ledger_transaction_no_truncate BEFORE TRUNCATE ON ledger_transaction FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER statement_no_change BEFORE UPDATE OR DELETE ON statement FOR EACH ROW EXECUTE FUNCTION append_only_guard();
+CREATE TRIGGER statement_no_truncate BEFORE TRUNCATE ON statement FOR EACH STATEMENT EXECUTE FUNCTION append_only_guard();
 
 -- --- Indices: so os das consultas que existem ------------------------
 
