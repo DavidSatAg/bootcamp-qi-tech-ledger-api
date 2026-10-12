@@ -45,6 +45,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="session")
 def party_scenarios() -> dict:
-    """{papel: party_key real} para a sessão inteira: as partes nascem uma
-    vez por `pytest`, e cada execução nova cria partes novas."""
+    """{papel: party_key real} para a sessão inteira: a semeadura roda uma
+    vez por `pytest`. Os documentos são fixos (PAR-12): a primeira execução
+    cria as partes, e as seguintes recuperam as mesmas chaves."""
     return seed_party_scenarios()
