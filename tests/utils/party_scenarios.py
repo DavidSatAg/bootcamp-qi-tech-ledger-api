@@ -15,7 +15,7 @@ PIX_ERRO = "pix_erro"  # ffff…: active, pix_key "erro@mock"
 
 PARTY_API_OFFLINE = (
     "Não consegui falar com o Cadastro em {base_url}.\n"
-    "No ponto de integração ele precisa estar de pé. Suba com, de dentro de bootcampparty/:  docker compose up"
+    "No ponto de integração ele precisa estar de pé. Suba com, de dentro de BootCamp_QiTech_Party/:  docker compose up"
 )
 
 PARTY_API_IS_MOCK = (
@@ -79,7 +79,7 @@ def GET_parties_by_document(document_number: str) -> tuple:
 
 def create_party_payload(document_number: str, pix_key: str = None) -> dict:
     """O corpo do `POST /parties`, no formato exato que o Cadastro aceita
-    (bootcampparty, PayloadGenerator.create_party_payload). Sem `pix_key`, a
+    (BootCamp_QiTech_Party, PayloadGenerator.create_party_payload). Sem `pix_key`, a
     chave não vai no corpo, em vez de ir como null."""
     payload = {
         "name": "Parte do ponto de integração",

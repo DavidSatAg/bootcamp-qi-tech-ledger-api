@@ -23,12 +23,13 @@ from pathlib import Path
 import pytest
 import requests
 
+from tests.utils.db_utils import DbUtils
 from tests.utils.party_scenarios import APROVADA, SEM_PIX, GET_party, party_api_base_url
 from tests.utils.request_generator import RequestGenerator
 
 # O compose do Cadastro, ao lado deste repositório (os três clonados na mesma
 # pasta). PARTY_COMPOSE_DIR troca, se o clone estiver em outro lugar.
-PARTY_COMPOSE_DIR = Path(environ.get("PARTY_COMPOSE_DIR", Path(__file__).resolve().parents[3] / "bootcampparty"))
+PARTY_COMPOSE_DIR = Path(environ.get("PARTY_COMPOSE_DIR", Path(__file__).resolve().parents[3] / "BootCamp_QiTech_Party"))
 PARTY_API_SERVICE = "api"
 PARTY_API_STARTUP_TIMEOUT = 60
 
@@ -72,6 +73,11 @@ class TestPartyApiDown:
         e nada é gravado. Com o Cadastro de volta, a mesma parte abre a
         carteira com 201 — nasce agora, prova de que a falha não deixou nada
         para trás."""
+        # As chaves se repetem entre rodadas (PAR-12): sem zerar o banco do
+        # Ledger, a carteira da rodada anterior daria 200 e "sem conta
+        # gravada" não valeria.
+        DbUtils.rollback()
+
         # Antes de derrubar: o Ledger fala com o Cadastro de verdade. Contra o
         # party-mock, esta parte daria 409 (o mock não a conhece), e o 503 de
         # baixo não provaria nada.
@@ -96,3 +102,13 @@ class TestPartyApiDown:
 
         status, response = RequestGenerator.POST_wallets({"party_key": party_key, "actor": "ledger-e2e"})
         assert status == 201, response
+
+
+def test_party_compose_dir_default_points_to_party_repo():
+    """LED-24: sem PARTY_COMPOSE_DIR, o compose do Cadastro é procurado na
+    pasta do repositório dele ao lado deste, e ela existe. Não é destrutivo:
+    só olha o disco, não para nada."""
+    if "PARTY_COMPOSE_DIR" in environ:
+        pytest.skip("PARTY_COMPOSE_DIR sobrescreve o padrão")
+
+    assert (PARTY_COMPOSE_DIR / "docker-compose.yml").is_file(), PARTY_COMPOSE_DIR

@@ -911,7 +911,7 @@ inventa código. Não é peça nova: é um limite declarado.
    prová-lo é o serviço estar fora do ar.
 3. *A peça, e por que é a menor:* um teste que dá `docker compose stop` no
    container `api` do Cadastro (a pasta vem de `PARTY_COMPOSE_DIR`; sem
-   ela, `../bootcampparty`), exige `503 QIT001040` sem conta gravada e o
+   ela, `../BootCamp_QiTech_Party`), exige `503 QIT001040` sem conta gravada e o
    sobe de volta no `finally`.
 4. *O que ela não faz:* não roda sem `E2E=1` e `E2E_DESTRUTIVO=1`, não
    para o banco do Cadastro e não termina antes de o `/health_check` dele

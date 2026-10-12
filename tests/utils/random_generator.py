@@ -32,7 +32,7 @@ class RandomGenerator:
     # ────────────────────────────────────────────────────────────────
     # CPF SÓ DÍGITOS, para cadastrar parte no Cadastro de verdade
     # (ponto de integração, tests/e2e/). Mesmo comportamento do
-    # RandomGenerator.generate_cpf_digits(ending=...) do bootcampparty.
+    # RandomGenerator.generate_cpf_digits(ending=...) do BootCamp_QiTech_Party.
     # ────────────────────────────────────────────────────────────────
     # O bureau mockado do Cadastro decide pelo final do documento (guia
     # 00 §2): 00 recusa, 99 fica fora do ar, 98 e 97 falham uma vez. Sem
