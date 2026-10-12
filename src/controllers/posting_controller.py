@@ -192,6 +192,12 @@ class PostingController(BaseController):
         if isinstance(error, OperationalError) and getattr(error.orig, "pgcode", None) == DEADLOCK_DETECTED:
             return LockTimeout()
 
+        # O 55P03 fora do passo 4: a perna que credita uma conta travada por
+        # outra transação espera a FK (FOR KEY SHARE) no `_write`, sob o
+        # mesmo lock_timeout do SET LOCAL. Também é contenção: 011 (L25).
+        if isinstance(error, OperationalError) and getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+            return LockTimeout()
+
         self.logger.exception("Erro inesperado no motor de postagem")
         return InternalError()
 

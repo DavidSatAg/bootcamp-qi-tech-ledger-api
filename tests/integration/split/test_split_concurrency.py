@@ -106,3 +106,25 @@ class TestSplitConcurrency:
         assert status == 201, response
         assert balance(keys["COLLECTION"]) == 0
         assert balance(keys["RENT"]) == 450000
+
+    def test_transfers_split_credited_account_locked_conflicts(self):
+        """A RENT, só creditada, travada por fora: o passo 4 não a trava, mas
+        a perna dela espera a FK (`FOR KEY SHARE`) no passo 7 sob o mesmo
+        lock_timeout. Estourou: 011, não 500; nada se move (L25)."""
+        keys = provision_contract()
+        status, response, _payload = ObjectGenerator.create_inflow(keys["contract_key"])
+        assert status == 201, response
+        payload = PayloadGenerator.create_split_payload(keys["contract_key"])
+        idempotency_key = str(uuid4())
+        with DbUtils.hold_row_lock(keys["RENT"]):
+            status, response = RequestGenerator.POST_transfers_split(payload, idempotency_key=idempotency_key)
+
+        assert status == 409, response
+        assert response["code"] == "QIT001011"
+        assert balance(keys["COLLECTION"]) == 640000
+        assert balance(keys["RENT"]) == 0
+
+        status, response = RequestGenerator.POST_transfers_split(payload, idempotency_key=str(uuid4()))
+
+        assert status == 201, response
+        assert balance(keys["RENT"]) == 450000
