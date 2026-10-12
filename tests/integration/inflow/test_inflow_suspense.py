@@ -93,6 +93,8 @@ class TestInflowSuspense:
 
         without_destination = PayloadGenerator.create_suspense_inflow_payload()
         del without_destination["client_key"]
+        status, wallet = ObjectGenerator.open_wallet()
+        assert status in (200, 201), wallet
 
         malformed_payloads = [
             suspense_with(contract_key=contract_key, period_reference="2026-09", payer_party_key=CARLOS),
@@ -100,6 +102,8 @@ class TestInflowSuspense:
             suspense_with(payer_party_key=CARLOS),
             without_destination,
             PayloadGenerator.create_suspense_inflow_payload(client_key="c1c1"),
+            suspense_with(wallet_key=wallet["ledger_account_key"]),
+            suspense_with(source_wallet_key=wallet["ledger_account_key"]),
         ]
 
         for payload in malformed_payloads:
