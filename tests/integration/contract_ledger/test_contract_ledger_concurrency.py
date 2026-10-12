@@ -153,6 +153,25 @@ class TestContractLedgerConcurrency:
             409, "QIT001012", "closed", 0
         ), response
 
+    def test_contract_ledgers_closure_lock_timeout_conflicts(self):
+        """Uma conta do contrato travada por fora além do lock_timeout: 011,
+        e nenhuma fecha; solta a trava, o encerramento passa (L26)."""
+        contract_key, keys = provision_contract()
+
+        with DbUtils.hold_row_lock(keys["RENT"]):
+            status, response = ObjectGenerator.close_contract_ledger(contract_key)
+
+            assert status == 409, response
+            assert response["code"] == "QIT001011"
+
+        assert account_of(keys["RENT"])["status"] == "active"
+        assert account_of(keys["COLLECTION"])["status"] == "active"
+
+        status, response = ObjectGenerator.close_contract_ledger(contract_key)
+
+        assert status == 200, response
+        assert account_of(keys["RENT"])["status"] == "closed"
+
     def test_contract_ledgers_closure_concurrent_closures(self):
         contract_key, keys = provision_contract()
 

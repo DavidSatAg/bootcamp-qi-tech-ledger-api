@@ -1,9 +1,10 @@
 from decimal import Decimal
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from constants import PLATFORM_PARTY_KEY
 from controllers.base_controller import BaseController
+from controllers.posting_controller import LOCK_NOT_AVAILABLE
 from dtos import ContractLedgerDTO
 from errors import (
     ContractNotProvisioned,
@@ -135,9 +136,12 @@ class ContractLedgerController(BaseController):
         Conta já `closed` não ganha evento: a repetição devolve o mesmo
         corpo sem escrever nada.
         """
-        ledger_accounts = self.ledger_account_repository.lock_contract_accounts(contract_key)
-        if ledger_accounts is None:
-            raise LockTimeout()
+        try:
+            ledger_accounts = self.ledger_account_repository.lock_contract_accounts(contract_key)
+        except OperationalError as error:
+            if getattr(error.orig, "pgcode", None) == LOCK_NOT_AVAILABLE:
+                raise LockTimeout() from error
+            raise
 
         if not ledger_accounts:
             raise ContractNotProvisioned(contract_key)
