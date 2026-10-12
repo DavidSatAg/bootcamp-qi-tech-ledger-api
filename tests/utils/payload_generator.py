@@ -211,22 +211,21 @@ class PayloadGenerator:
         period_reference: str = "2026-09",
         value_date: str = None,
         actor: str = "erp-alfa",
-        reason: str = None,
+        reason: str = "divisão do aluguel 09/2026",
     ) -> dict:
         """A divisão da competência do caso do remodelagem/05 (TX2) no
-        contrato pedido. `value_date` e `reason` ausentes ficam fora do corpo.
+        contrato pedido. `value_date` ausente fica fora do corpo; o `reason`
+        é obrigatório (D0008, pendência LED-04).
         """
         payload = {
             "contract_key": contract_key,
             "period_reference": period_reference,
             "actor": actor,
+            "reason": reason,
         }
 
         if value_date is not None:
             payload["value_date"] = value_date
-
-        if reason is not None:
-            payload["reason"] = reason
 
         return payload
 
@@ -331,16 +330,15 @@ class PayloadGenerator:
         }
 
     @staticmethod
-    def create_reversal_payload(amount_in_cents: int = None, actor: str = "erp-alfa", reason: str = None) -> dict:
+    def create_reversal_payload(
+        amount_in_cents: int = None, actor: str = "erp-alfa", reason: str = "estorno do aluguel 09/2026"
+    ) -> dict:
         """O estorno de uma transação (RFC :151): total, sem valor. O valor
-        e o motivo ausentes ficam fora do corpo."""
-        payload = {"actor": actor}
+        ausente fica fora do corpo; o `reason` é obrigatório (D0008, LED-04)."""
+        payload = {"actor": actor, "reason": reason}
 
         if amount_in_cents is not None:
             payload["amount_in_cents"] = amount_in_cents
-
-        if reason is not None:
-            payload["reason"] = reason
 
         return payload
 
@@ -417,12 +415,7 @@ class PayloadGenerator:
         }
 
     @staticmethod
-    def create_status_payload(status: str, actor: str = "erp-alfa", reason: str = None) -> dict:
+    def create_status_payload(status: str, actor: str = "erp-alfa", reason: str = "conferência do IPTU 09/2026") -> dict:
         """A mudança de status da conta (RFC :145), como o ERP a manda.
-        O motivo ausente fica fora do corpo."""
-        payload = {"status": status, "actor": actor}
-
-        if reason is not None:
-            payload["reason"] = reason
-
-        return payload
+        O `reason` é obrigatório (D0008, pendência LED-04)."""
+        return {"status": status, "actor": actor, "reason": reason}

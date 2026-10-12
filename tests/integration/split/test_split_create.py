@@ -238,10 +238,14 @@ class TestSplitCreate:
 
         without_actor = dict(valid)
         del without_actor["actor"]
+        without_reason = dict(valid)
+        del without_reason["reason"]
         malformed = [
             (valid, None),
             (valid, "k" * 256),
             (without_actor, str(uuid4())),
+            (without_reason, str(uuid4())),
+            (dict(valid, reason=""), str(uuid4())),
             (dict(valid, period_reference="2026-9"), str(uuid4())),
             (dict(valid, amount_in_cents=640000), str(uuid4())),
             (dict(valid, value_date="2026-02-30T00:00:00Z"), str(uuid4())),

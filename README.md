@@ -1058,7 +1058,7 @@ curl -X POST http://localhost:3003/transfers/split \
   -H "INTERNAL-TOKEN: default_token" \
   -H "Idempotency-Key: split-0c0c-2026-09" \
   -H "Content-Type: application/json" \
-  -d '{"contract_key": "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c", "period_reference": "2026-09", "value_date": "2026-09-05T14:23:00Z", "actor": "erp-alfa"}'
+  -d '{"contract_key": "0c0c0c0c-0c0c-40c0-80c0-0c0c0c0c0c0c", "period_reference": "2026-09", "value_date": "2026-09-05T14:23:00Z", "actor": "erp-alfa", "reason": "divisao do aluguel 09/2026"}'
 ```
 
 O rastreio da TX1, com a cadeia do contrato na competência:

@@ -17,12 +17,14 @@
     },
     "reason": {
       "type": "string",
+      "minLength": 1,
       "maxLength": 255
     }
   },
   "required": [
     "status",
-    "actor"
+    "actor",
+    "reason"
   ],
   "additionalProperties": false
 }

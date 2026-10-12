@@ -152,11 +152,15 @@ class TestLedgerAccountStatus:
         del without_status["status"]
         without_actor = dict(valid)
         del without_actor["actor"]
+        without_reason = dict(valid)
+        del without_reason["reason"]
         cases = [
             without_status,
             PayloadGenerator.create_status_payload("frozen"),
             without_actor,
             PayloadGenerator.create_status_payload("blocked", actor=""),
+            without_reason,
+            PayloadGenerator.create_status_payload("blocked", reason=""),
             PayloadGenerator.create_status_payload("blocked", reason="r" * 256),
             dict(valid, balance_in_cents=0),
         ]

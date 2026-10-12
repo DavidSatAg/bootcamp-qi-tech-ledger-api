@@ -96,10 +96,14 @@ class TestReversalCreate:
         valid = PayloadGenerator.create_reversal_payload()
         without_actor = dict(valid)
         del without_actor["actor"]
+        without_reason = dict(valid)
+        del without_reason["reason"]
         cases = [
             (valid, None),
             (valid, "k" * 256),
             (without_actor, str(uuid4())),
+            (without_reason, str(uuid4())),
+            (dict(valid, reason=""), str(uuid4())),
             (dict(valid, amount_in_cents=0), str(uuid4())),
             (dict(valid, amount_in_cents="450000"), str(uuid4())),
             (dict(valid, value_date="2026-09-06T10:00:00Z"), str(uuid4())),

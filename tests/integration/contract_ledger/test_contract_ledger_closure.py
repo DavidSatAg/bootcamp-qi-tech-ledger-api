@@ -48,12 +48,16 @@ class TestContractLedgerClosure:
 
         without_actor = PayloadGenerator.create_closure_payload()
         del without_actor["actor"]
+        without_reason = PayloadGenerator.create_closure_payload()
+        del without_reason["reason"]
         extra_field = PayloadGenerator.create_closure_payload()
         extra_field["status"] = "closed"
 
         malformed_bodies = [
             without_actor,
             PayloadGenerator.create_closure_payload(actor=""),
+            without_reason,
+            PayloadGenerator.create_closure_payload(reason=""),
             PayloadGenerator.create_closure_payload(reason="x" * 256),
             extra_field,
         ]

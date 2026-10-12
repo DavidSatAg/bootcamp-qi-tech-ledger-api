@@ -74,6 +74,8 @@ class TestPayoutPix:
         valid = PayloadGenerator.create_payout_payload(rent_key)
         without_actor = dict(valid)
         del without_actor["actor"]
+        without_reason = dict(valid)
+        del without_reason["reason"]
         without_period = dict(valid)
         del without_period["period_reference"]
         cases = [
@@ -83,6 +85,8 @@ class TestPayoutPix:
             (PayloadGenerator.create_payout_payload(rent_key, amount_in_cents="450000"), str(uuid4())),
             (PayloadGenerator.create_payout_payload(rent_key, destination="ted"), str(uuid4())),
             (without_actor, str(uuid4())),
+            (without_reason, str(uuid4())),
+            (dict(valid, reason=""), str(uuid4())),
             (without_period, str(uuid4())),
             (PayloadGenerator.create_payout_payload(rent_key, period_reference="2026-9"), str(uuid4())),
             (dict(valid, pix_key="ana.locadora@example.com"), str(uuid4())),

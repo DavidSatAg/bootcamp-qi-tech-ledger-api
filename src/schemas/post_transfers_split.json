@@ -21,13 +21,15 @@
     },
     "reason": {
       "type": "string",
+      "minLength": 1,
       "maxLength": 255
     }
   },
   "required": [
     "contract_key",
     "period_reference",
-    "actor"
+    "actor",
+    "reason"
   ],
   "additionalProperties": false
 }
