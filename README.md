@@ -1007,6 +1007,12 @@ Bash, na ordem, com a pilha da seção 10 de pé. Toda rota pede o
 conhece aparece como `$NOME`: copie-o da resposta indicada e defina a
 variável antes de rodar o bloco (`RENT_KEY=...`).
 
+As partes dos exemplos (`1111…`, `2222…`, `3333…`, `4444…` a `7777…`) são
+chaves do `party-mock`, a pilha da seção 10 com os mocks. Contra o Cadastro
+de verdade elas não existem, e as rotas que consultam o dono respondem
+`409`: crie antes cada parte por `POST /parties` no Cadastro e troque a
+chave pela `party_key` da resposta.
+
 O provisionamento (`01b` §3). Da resposta, em `accounts`, saem o
 `ledger_account_key` da `RENT` (`$RENT_KEY`), o da `OWN` (`$OWN_KEY`) e o
 da `COLLECTION` (`$COLLECTION_KEY`).
