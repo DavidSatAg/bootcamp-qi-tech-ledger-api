@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from tests.utils import DbUtils, ObjectGenerator, PayloadGenerator, RequestGenerator
@@ -242,11 +242,12 @@ class TestWebhookSettlement:
         assert links_of_type(payout, "dispatch_return") == []
 
     def test_webhooks_provider_chain_ends_in_settlement(self):
-        """CU-T1: a cadeia da competência, da entrada à liquidação. A
-        liquidação vem com o instante lido depois do 202, porque o repasse
-        tem a data-valor do agora (D5)."""
+        """CU-T1: a cadeia da competência, da entrada à liquidação. O
+        repasse tem a data-valor do agora do servidor (D5), e a liquidação
+        vem 1 s depois dela: o relógio da máquina dos testes não entra."""
         _contract_ledger, payout = ObjectGenerator.create_paid_out_contract()
-        value_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        payout_value_date = datetime.fromisoformat(payout["value_date"].replace("Z", "+00:00"))
+        value_date = (payout_value_date + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
         status, response, _payload = ObjectGenerator.create_settlement(payout["outbox"], value_date=value_date)
 
