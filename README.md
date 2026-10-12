@@ -1009,11 +1009,13 @@ Bash, na ordem, com a pilha da seção 10 de pé. Toda rota pede o
 conhece aparece como `$NOME`: copie-o da resposta indicada e defina a
 variável antes de rodar o bloco (`RENT_KEY=...`).
 
-As partes dos exemplos (`1111…`, `2222…`, `3333…`, `4444…` a `7777…`) são
-chaves do `party-mock`, a pilha da seção 10 com os mocks. Contra o Cadastro
-de verdade elas não existem, e as rotas que consultam o dono respondem
-`409`: crie antes cada parte por `POST /parties` no Cadastro e troque a
-chave pela `party_key` da resposta.
+A parte `2222…` dos exemplos é a do `party-mock`, a pilha da seção 10 com
+os mocks. Contra o Cadastro de verdade ela não existe, e `POST
+/transfers/payout` e `POST /wallets` respondem `409 QIT001038`: crie a
+parte antes por `POST /parties` no Cadastro e use a `party_key` da resposta
+como `beneficiary_party_key` do item `RENT` e no `/wallets`. As demais
+chaves (`1111…`, `3333…`, `4444…`, `6666…`, `7777…`) o Ledger não consulta
+no Cadastro.
 
 O provisionamento (`01b` §3). Da resposta, em `accounts`, saem o
 `ledger_account_key` da `RENT` (`$RENT_KEY`), o da `OWN` (`$OWN_KEY`) e o
