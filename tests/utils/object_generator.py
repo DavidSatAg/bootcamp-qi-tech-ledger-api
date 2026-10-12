@@ -300,12 +300,18 @@ class ObjectGenerator:
         return status, response, deposit_payload
 
     @staticmethod
-    def create_pending_payout(idempotency_key: str) -> tuple:
+    def create_pending_payout(
+        idempotency_key: str, owner_party_key: str = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+    ) -> tuple:
         """O contrato dividido com a RENT do `ffff…` (Pix com erro no
         provedor) e o repasse dos 450000 dela com a chave pedida: a outbox
         fica `pending`, com uma tentativa (S09 CA-11). Devolve (corpo do 202,
-        payload)."""
-        contract_ledger = ObjectGenerator.create_divided_contract("ffffffff-ffff-4fff-8fff-ffffffffffff")
+        payload).
+
+        `owner_party_key` troca o dono da RENT (D-5): uma parte cujo Pix
+        também falha no provedor, como a `pix_erro` real no ponto de
+        integração (tests/e2e/)."""
+        contract_ledger = ObjectGenerator.create_divided_contract(owner_party_key)
 
         rent_account_key = None
         for account in contract_ledger["accounts"]:

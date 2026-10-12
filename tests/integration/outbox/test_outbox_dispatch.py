@@ -4,6 +4,7 @@ from tests.utils import DbUtils, ObjectGenerator, RequestGenerator
 
 ALFA_CLIENT = "c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1"
 PIX_ERROR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+PIX_TIMEOUT = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
 
 def balance(ledger_account_key: str) -> int:
@@ -166,6 +167,19 @@ class TestOutboxDispatch:
 
             assert status == 400, (payload, response)
             assert response["code"] == "QIT000001", (payload, response)
+
+    def test_outbox_dispatch_pending_payout_for_given_owner(self):
+        """O `create_pending_payout` aceita o dono da RENT (D-5): com o
+        `eeee…` (Pix em timeout), o repasse também fica `pending`, e o
+        provedor recebe a pix_key dele, não a do `ffff…` padrão."""
+        DbUtils.rollback()
+        payout, _payload = ObjectGenerator.create_pending_payout(str(uuid4()), owner_party_key=PIX_TIMEOUT)
+
+        dispatches = pix_dispatches(payout["outbox"]["dispatch_idempotency_key"])
+        assert len(dispatches) == 1, dispatches
+        assert dispatches[0][1]["pix_key"] == "timeout@mock"
+        entries = trace(payout["ledger_transaction_key"])["entries"]
+        assert PIX_TIMEOUT in [entry["owner_party_key"] for entry in entries], entries
 
     def test_outbox_dispatch_sends_pending_later(self):
         payout, payload, idempotency_key = pending_payout()
