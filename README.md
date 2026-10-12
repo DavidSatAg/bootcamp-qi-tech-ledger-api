@@ -1110,3 +1110,45 @@ curl -X POST http://localhost:3003/contract_ledgers/0c0c0c0c-0c0c-40c0-80c0-0c0c
   -H "Content-Type: application/json" \
   -d '{"actor": "contract-api", "reason": "fim da locacao ALFA-2026-0042"}'
 ```
+
+## 12. Códigos do Ledger
+
+A seção 7 é a da base e continua igual. Os códigos das regras do Ledger
+começam no `QIT001008`, estão em `src/errors/custom_errors.py` e são os do
+guia do Ledger §7, sem tirar nem pôr:
+
+| Código | Situação | HTTP |
+|---|---|---|
+| `QIT001008` | par de propósitos proibido / contratos diferentes | 422 |
+| `QIT001009` | saldo insuficiente | 422 |
+| `QIT001010` | mesma chave de idempotência, corpo diferente; ou `end_to_end_id` já usado sob outra chave (S05a D-01) | 409 |
+| `QIT001011` | contenção além do `lock_timeout` | 409 |
+| `QIT001012` | conta não aceita **movimento** no estado atual (não é transição de estado) | 409 |
+| `QIT001013` | atravessaria livros de clientes (rota `internal`) | 422 |
+| `QIT001014` | moedas divergentes | 422 |
+| `QIT001015` | estornos excederiam o original | 422 |
+| `QIT001016` | não se estorna estorno | 422 |
+| `QIT001017` | período já tem extrato | 409 |
+| `QIT001018` | conta inexistente | 404 |
+| `QIT001019` | cliente sem livros no ledger | 404 |
+| `QIT001020` | transação inexistente | 404 |
+| `QIT001022` | extrato inexistente | 404 |
+| `QIT001028` | propósito inexistente | 422 |
+| `QIT001031` | outbox inexistente | 404 |
+| `QIT001032` | versão de split já provisionada com outro conteúdo | 409 |
+| `QIT001033` | versão de split fora de sequência | 409 |
+| `QIT001034` | split não fecha: percentuais ≥ 100%, ou taxa da plataforma > taxa de administração | 422 |
+| `QIT001035` | contrato não provisionado | 404 |
+| `QIT001036` | competência já dividida | 409 |
+| `QIT001037` | conta com saldo não pode ser encerrada | 409 |
+| `QIT001038` | dono não está ativo no cadastro | 409 |
+| `QIT001039` | dono sem chave Pix | 422 |
+| `QIT001040` | cadastro indisponível | 503 |
+| `QIT001041` | dono sem carteira | 404 |
+| `QIT001042` | a transação não fecha em zero em algum livro | 500 |
+| `QIT001043` | transição de estado da conta inválida | 409 |
+
+`QIT001021`, `023`–`027`, `029`, `030` estão **aposentados**: não use.
+
+Os números estão fixados (sumário das specs §4): o "próximo livre" da
+seção 7 não vale aqui, e um código aposentado não volta.
