@@ -51,6 +51,9 @@ class StatementDTO:
     @staticmethod
     def line_to_dict(ledger_entry, ledger_transaction) -> dict:
         dto = dict()
+        # O 1º campo da linha do hash (A1): sem ele, ninguém de fora recalcula
+        # o `content_hash` a partir da resposta (sumário L24, decisão D-3).
+        dto["id"] = ledger_entry.id
         dto["ledger_transaction_key"] = ledger_transaction.ledger_transaction_key
         dto["transaction_type"] = ledger_transaction.ledger_transaction_type.enumerator
         dto["direction"] = ledger_entry.direction
