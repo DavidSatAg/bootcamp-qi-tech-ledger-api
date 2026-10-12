@@ -149,8 +149,7 @@ class ReversalController(BaseController):
         o estorno de quem soltou (READ COMMITTED). Σ D vale para 2 ou 4
         pernas.
 
-        O `55P03` vira o 011 aqui: passado adiante, o motor o trocaria pelo
-        InternalError."""
+        O `55P03` vira o 011 aqui, onde a trava acontece."""
         try:
             self.ledger_transaction_repository.lock_for_update(original_id, LOCK_TIMEOUT)
         except OperationalError as error:

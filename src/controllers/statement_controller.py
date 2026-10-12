@@ -132,8 +132,8 @@ class StatementController(BaseController):
 
     def _issue(self, ledger_account, period_start: datetime, period_end: datetime) -> dict:
         """A trava, o corte, as linhas, o hash e o INSERT (RN-06, RN-08)."""
-        # O `55P03` vira o 011 aqui, como no motor: passado adiante, o
-        # `_as_qi_exception` o trocaria pelo InternalError.
+        # O `55P03` vira o 011 aqui, como no motor: o `_as_qi_exception`
+        # deste controller o trocaria pelo InternalError.
         try:
             cutoff = self.ledger_account_repository.lock_for_statement(ledger_account)
         except OperationalError as error:

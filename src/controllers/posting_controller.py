@@ -331,8 +331,9 @@ class PostingController(BaseController):
         :35-55). Devolve [(conta, líquido devedor)], em `id`; nenhuma conta,
         nenhum SQL.
 
-        O `55P03` vira o 011 aqui: passado adiante, o `_as_qi_exception` o
-        trocaria pelo InternalError. Outro erro de banco sobe como está.
+        O `55P03` vira o 011 aqui, onde a trava acontece (o `_as_qi_exception`
+        também o traduz, para o do `_write`, L25). Outro erro de banco sobe
+        como está.
         """
         accounts = dict()
         net_debits = dict()
