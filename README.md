@@ -865,6 +865,57 @@ inventa código. Não é peça nova: é um limite declarado.
 4. *O que ela não faz:* não altera arquivo de mock, não persiste e não
    afeta outra chave.
 
+### A trava `E2E=1` do ponto de integração (`tests/e2e/conftest.py`)
+
+1. *Princípio da base tocado:* a suíte da base roda inteira com um
+   `pytest`, sem variável nenhuma.
+2. *Por que não funciona sem:* os testes de `tests/e2e/` falam com o
+   Cadastro de verdade, que o `pytest` comum não tem de pé; sem a trava, a
+   suíte contra os mocks falharia por um motivo que não é dela.
+3. *A peça, e por que é a menor:* um `pytest_collection_modifyitems` que
+   marca como `skip` tudo em `tests/e2e/` quando `E2E` não vale `1`.
+4. *O que ela não faz:* não pula nada fora de `tests/e2e/`, não sobe o
+   Cadastro e não troca o `PARTY_API_URL` da API.
+
+### O marcador `destrutivo` (`tests/e2e/conftest.py`)
+
+1. *Princípio da base tocado:* todo teste da base pode rodar junto de
+   qualquer outro.
+2. *Por que não funciona sem:* o caso "Cadastro fora do ar" para o
+   container do Cadastro; rodando junto de outro teste, derruba esse outro.
+3. *A peça, e por que é a menor:* um marcador registrado no
+   `pytest_configure`; o teste marcado só roda com `E2E_DESTRUTIVO=1` a
+   mais, e sozinho.
+4. *O que ela não faz:* não isola nada por conta própria: quem garante que
+   nada mais depende do Cadastro naquele momento é quem roda.
+
+### As partes reais do ponto de integração (`tests/utils/party_scenarios.py`)
+
+1. *Princípio da base tocado:* o cenário nasce por `POST` na própria API, e
+   as chaves das partes são as mágicas do `party-mock`.
+2. *Por que não funciona sem:* as chaves mágicas (`2222…`, `aaaa…`, `dddd…`,
+   `eeee…`, `ffff…`) não existem no Cadastro de verdade.
+3. *A peça, e por que é a menor:* `seed_party_scenarios()` cria cada papel
+   por `POST /parties` no Cadastro real e devolve `{papel: party_key}`; a
+   fixture `party_scenarios` semeia uma vez por `pytest`.
+4. *O que ela não faz:* não roda contra o `party-mock` (recusa, se o
+   `PARTY_API_URL` apontar para ele), não apaga as partes que cria e não
+   muda os testes contra os mocks.
+
+### O Cadastro fora do ar de verdade (`tests/e2e/test_party_api_down.py`)
+
+1. *Princípio da base tocado:* teste fala HTTP com a API e não mexe em
+   container.
+2. *Por que não funciona sem:* o `cccc…` do `party-mock` simula o Cadastro
+   fora do ar com um atraso; contra o Cadastro real, a única forma de
+   prová-lo é o serviço estar fora do ar.
+3. *A peça, e por que é a menor:* um teste que dá `docker compose stop` no
+   container `api` do Cadastro (a pasta vem de `PARTY_COMPOSE_DIR`), exige
+   `503 QIT001040` sem conta gravada e o sobe de volta no `finally`.
+4. *O que ela não faz:* não roda sem `E2E=1` e `E2E_DESTRUTIVO=1`, não
+   para o banco do Cadastro e não termina antes de o `/health_check` dele
+   responder de novo.
+
 
 ## 10. Como subir o Ledger
 
@@ -905,6 +956,20 @@ e suba sem o mock:
 ```bash
 docker compose up -d api db provider-mock
 ```
+
+Contra o Cadastro real, use `PARTY_API_TIMEOUT=3` no `.env`: o `1` do
+`.env.example` é o valor da suíte, feito para os mocks de "fora do ar".
+
+Os testes do ponto de integração ficam em `tests/e2e/` e só rodam com
+`E2E=1` (sem ela, aparecem como `skipped`):
+
+```bash
+E2E=1 PARTY_API_URL=http://host.docker.internal:3001 API_PORT=3003   SERVER_LOCALHOST=localhost pytest tests/e2e
+```
+
+O `test_party_api_down.py` para o Cadastro de verdade: ele pede
+`E2E_DESTRUTIVO=1` a mais e roda sozinho, nunca junto de outro teste que
+dependa do Cadastro de pé (seção 9).
 
 Precisa dos dois mocks de pé ao mesmo tempo e a `8091` está ocupada?
 Troque o `PARTY_MOCK_PORT` no `.env`.
