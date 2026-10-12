@@ -885,7 +885,7 @@ inventa código. Não é peça nova: é um limite declarado.
    container do Cadastro; rodando junto de outro teste, derruba esse outro.
 3. *A peça, e por que é a menor:* um marcador registrado no
    `pytest_configure`; o teste marcado só roda com `E2E_DESTRUTIVO=1` a
-   mais, e sozinho.
+   mais, e rodá-lo sozinho fica por conta de quem roda.
 4. *O que ela não faz:* não isola nada por conta própria: quem garante que
    nada mais depende do Cadastro naquele momento é quem roda.
 
@@ -899,7 +899,7 @@ inventa código. Não é peça nova: é um limite declarado.
    por `POST /parties` no Cadastro real e devolve `{papel: party_key}`; a
    fixture `party_scenarios` semeia uma vez por `pytest`.
 4. *O que ela não faz:* não roda contra o `party-mock` (recusa, se o
-   `PARTY_API_URL` apontar para ele), não apaga as partes que cria e não
+   `PARTY_API_URL` tiver o host `party-mock`), não apaga as partes que cria e não
    muda os testes contra os mocks.
 
 ### O Cadastro fora do ar de verdade (`tests/e2e/test_party_api_down.py`)
@@ -910,11 +910,12 @@ inventa código. Não é peça nova: é um limite declarado.
    fora do ar com um atraso; contra o Cadastro real, a única forma de
    prová-lo é o serviço estar fora do ar.
 3. *A peça, e por que é a menor:* um teste que dá `docker compose stop` no
-   container `api` do Cadastro (a pasta vem de `PARTY_COMPOSE_DIR`), exige
-   `503 QIT001040` sem conta gravada e o sobe de volta no `finally`.
+   container `api` do Cadastro (a pasta vem de `PARTY_COMPOSE_DIR`; sem
+   ela, `../bootcampparty`), exige `503 QIT001040` sem conta gravada e o
+   sobe de volta no `finally`.
 4. *O que ela não faz:* não roda sem `E2E=1` e `E2E_DESTRUTIVO=1`, não
    para o banco do Cadastro e não termina antes de o `/health_check` dele
-   responder de novo.
+   responder de novo, ou de 60 s se passarem (e aí falha).
 
 
 ## 10. Como subir o Ledger
@@ -964,7 +965,8 @@ Os testes do ponto de integração ficam em `tests/e2e/` e só rodam com
 `E2E=1` (sem ela, aparecem como `skipped`):
 
 ```bash
-E2E=1 PARTY_API_URL=http://host.docker.internal:3001 API_PORT=3003   SERVER_LOCALHOST=localhost pytest tests/e2e
+E2E=1 PARTY_API_URL=http://host.docker.internal:3001 API_PORT=3003 \
+  SERVER_LOCALHOST=localhost pytest tests/e2e
 ```
 
 O `test_party_api_down.py` para o Cadastro de verdade: ele pede
